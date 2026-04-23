@@ -7,7 +7,7 @@ RoadGuard ML - חיזוי מדד מצב המיסעה (PCI)
 
 מקור הנתונים
 נשתמש במאגר הנתונים הפתוח של עיריית שיקגו בנושא מצב כבישים (Road Surface Conditions).
-קישור ישיר: https://www.kaggle.com/datasets/probelm/pavement-condition-index
+קישור ישיר : https://www.kaggle.com/datasets/probelm/pavement-condition-index
 
 ארכיטקטורה טכנית
 מודל ML: רגרסיה מסוג Random Forest לחיזוי ציון ה-PCI (0-100).
