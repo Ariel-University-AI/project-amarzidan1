@@ -112,6 +112,85 @@ def load_data() -> pd.DataFrame:
 
     return df
 
+# ── Intervention recommendation engine ───────────────────────────────────────
+INTERVENTIONS = {
+    "כיכר תנועה": {
+        "desc":    "מחליפה צומת רגיל — מבטלת התנגשויות חזיתיות ומאלצת האטה",
+        "fatal":   0.82, "serious": 0.55, "cost": "גבוה",
+        "tags":    {"חזיתית", "התהפכות", "מהירות_גבוהה"},
+    },
+    "רמזור חכם": {
+        "desc":    "מסדיר תנועה עם עדיפות להולכי רגל ובשעות עומס",
+        "fatal":   0.45, "serious": 0.32, "cost": "בינוני",
+        "tags":    {"הולך רגל", "עירוני", "עומס"},
+    },
+    "מעבר חצייה מוגן + תאורה": {
+        "desc":    "הגבהה, תמרור, תאורה ממוקדת — יעיל לאזורים עם הולכי רגל",
+        "fatal":   0.55, "serious": 0.38, "cost": "נמוך",
+        "tags":    {"הולך רגל", "עירוני"},
+    },
+    "תאורת לד מוגברת": {
+        "desc":    "שיפור תאורה בצמתים ולאורך הכביש — יעיל במיוחד בתאונות לילה",
+        "fatal":   0.32, "serious": 0.22, "cost": "נמוך",
+        "tags":    {"לילה", "ערפל"},
+    },
+    "מצלמת אכיפה + מד-מהירות": {
+        "desc":    "אכיפה אוטומטית — מורידה מהירות ממוצעת ב-7 קמ\"ש",
+        "fatal":   0.25, "serious": 0.18, "cost": "נמוך-בינוני",
+        "tags":    {"מהירות_גבוהה", "בין-עירוני"},
+    },
+    "פסי האטה / מוקפצים": {
+        "desc":    "מאלצים האטה פיזית — יעיל בכניסות לישובים ואזורי מגורים",
+        "fatal":   0.30, "serious": 0.25, "cost": "נמוך",
+        "tags":    {"אחורית", "מהירות_בינונית"},
+    },
+}
+
+def _accident_profile(site_df: pd.DataFrame) -> dict:
+    n = max(len(site_df), 1)
+    spd_mode = site_df["מהירות_מותרת"].mode()
+    spd_val  = spd_mode.iloc[0] if len(spd_mode) else "50"
+    hr_mode  = site_df["שעה"].mode()
+    return {
+        "total":          len(site_df),
+        "fatal_pct":      (site_df["חומרת_תאונה"] == "קטלנית").sum() / n,
+        "serious_pct":    (site_df["חומרת_תאונה"] == "קשה").sum() / n,
+        "night_pct":      (site_df["חלק_יממה"] == "לילה").sum() / n,
+        "rain_pct":       site_df["מזג_אוויר"].isin(["גשם", "גשם קל"]).sum() / n,
+        "pedestrian_pct": (site_df["סוג_תאונה"] == "הולך רגל").sum() / n,
+        "frontal_pct":    (site_df["סוג_תאונה"] == "חזיתית").sum() / n,
+        "rear_pct":       (site_df["סוג_תאונה"] == "אחורית").sum() / n,
+        "rollover_pct":   (site_df["סוג_תאונה"] == "התהפכות").sum() / n,
+        "high_speed":     str(spd_val) in {"70", "80", "90", "100", "110"},
+        "peak_hour":      int(hr_mode.iloc[0]) if len(hr_mode) else 0,
+        "road_type":      site_df["סוג_דרך"].mode().iloc[0] if len(site_df) else "—",
+    }
+
+def _rank_interventions(prof: dict, approaches: int, traffic: int, current: str) -> list:
+    scores = {}
+    for name, info in INTERVENTIONS.items():
+        s = (
+            prof["fatal_pct"]   * info["fatal"]   +
+            prof["serious_pct"] * info["serious"]
+        ) * prof["total"] * 10
+
+        if prof["pedestrian_pct"] > 0.12 and "הולך רגל" in info["tags"]: s += 25
+        if prof["frontal_pct"]    > 0.18 and "חזיתית"   in info["tags"]: s += 25
+        if prof["night_pct"]      > 0.35 and "לילה"      in info["tags"]: s += 20
+        if prof["high_speed"]               and "מהירות_גבוהה" in info["tags"]: s += 20
+        if prof["rear_pct"]       > 0.20 and "אחורית"    in info["tags"]: s += 15
+        if name == "כיכר תנועה"    and approaches in {3, 4}:  s += 10
+        if name == "רמזור חכם"     and traffic > 10000:        s += 10
+        if name == "רמזור חכם"     and current == "רמזור קיים": s -= 35
+        if name == "כיכר תנועה"   and current == "כיכר קיימת": s -= 35
+        scores[name] = max(0.0, s)
+
+    mx = max(scores.values()) or 1
+    return sorted(
+        [(n, round(v / mx * 100), INTERVENTIONS[n]) for n, v in scores.items()],
+        key=lambda x: x[1], reverse=True,
+    )
+
 # ── ML model ──────────────────────────────────────────────────────────────────
 _FEAT_COLS = ["סוג_דרך", "מזג_אוויר", "מצב_כביש", "מהירות_מותרת",
               "חלק_יממה", "מחוז", "סוג_תאונה"]
@@ -193,7 +272,11 @@ if wthr_sel:
     flt = flt[flt["מזג_אוויר"].isin(wthr_sel)]
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_eda, tab_mgr = st.tabs(["📊 ניתוח חקרני (EDA)", "🎯 ממשק מנהל — מוקדי סיכון"])
+tab_eda, tab_mgr, tab_pred = st.tabs([
+    "📊 ניתוח חקרני (EDA)",
+    "🎯 ממשק מנהל — מוקדי סיכון",
+    "🔮 חיזוי פתרון לצומת",
+])
 
 # ══════════════════════════════ EDA TAB ═══════════════════════════════════════
 with tab_eda:
@@ -436,3 +519,126 @@ with tab_mgr:
         st.plotly_chart(fig_risk, use_container_width=True)
     else:
         st.info("אין נתוני מיקום לתצוגה בסינון הנוכחי")
+
+# ══════════════════════════════ PREDICTION TAB ════════════════════════════════
+with tab_pred:
+    st.title("🔮 חיזוי פתרון תשתיתי לצומת")
+    st.caption("המערכת מנתחת את פרופיל התאונות ומדרגת פתרונות לפי צפי להפחתת קטלניות")
+    st.markdown("---")
+
+    # ── Step 1: site selection ──
+    st.subheader("1️⃣  בחר אתר לניתוח")
+    all_sites = sorted(df["אתר"].dropna().unique().tolist())
+    selected_site = st.selectbox("בחר צומת / אתר:", all_sites)
+
+    site_df = df[df["אתר"] == selected_site]
+    prof    = _accident_profile(site_df)
+
+    st.markdown("---")
+
+    # ── Step 2: accident profile ──
+    st.subheader("2️⃣  פרופיל התאונות באתר")
+
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric("סה\"כ תאונות",        prof["total"])
+    p2.metric("% קשות + קטלניות",    f"{(prof['fatal_pct']+prof['serious_pct'])*100:.1f}%")
+    p3.metric("% תאונות לילה",       f"{prof['night_pct']*100:.1f}%")
+    p4.metric("שעת שיא",             f"{prof['peak_hour']:02d}:00")
+
+    pc1, pc2 = st.columns(2)
+
+    with pc1:
+        type_data = site_df["סוג_תאונה"].value_counts().reset_index()
+        type_data.columns = ["סוג", "כמות"]
+        fig = px.pie(type_data, names="סוג", values="כמות",
+                     title="סוגי תאונות באתר", hole=0.35)
+        fig.update_traces(textposition="inside", textinfo="percent+label")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with pc2:
+        sev_data = site_df["חומרת_תאונה"].value_counts().reset_index()
+        sev_data.columns = ["חומרה", "כמות"]
+        fig = px.bar(sev_data, x="חומרה", y="כמות",
+                     title="חומרת תאונות באתר",
+                     color="חומרה",
+                     color_discrete_map={"קלה": "#2ecc71", "קשה": "#e67e22", "קטלנית": "#e74c3c"})
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Step 3: site characteristics (user input) ──
+    st.subheader("3️⃣  מאפייני הצומת")
+
+    ch1, ch2, ch3 = st.columns(3)
+    with ch1:
+        approaches = st.slider("מספר כניסות לצומת:", 2, 6, 4)
+    with ch2:
+        traffic = st.select_slider(
+            "נפח תנועה יומי משוער (כלי רכב):",
+            options=[1000, 3000, 5000, 10000, 20000, 40000, 80000],
+            value=10000,
+        )
+    with ch3:
+        current = st.selectbox(
+            "בקרה קיימת בצומת:",
+            ["ללא בקרה", "תמרורי עצור / כניעה", "רמזור קיים", "כיכר קיימת"],
+        )
+
+    st.markdown("---")
+
+    # ── Step 4: recommendations ──
+    st.subheader("4️⃣  המלצות מדורגות לפתרון תשתיתי")
+
+    ranked = _rank_interventions(prof, approaches, traffic, current)
+
+    # Top recommendation
+    top_name, top_score, top_info = ranked[0]
+    st.success(
+        f"**המלצה ראשית: {top_name}**  \n"
+        f"{top_info['desc']}  \n"
+        f"צפי להפחתת תאונות קטלניות: **{int(top_info['fatal']*100)}%** | "
+        f"קשות: **{int(top_info['serious']*100)}%** | "
+        f"עלות יחסית: **{top_info['cost']}**"
+    )
+
+    # All ranked alternatives
+    st.markdown("#### השוואת כל הפתרונות")
+    rank_df = pd.DataFrame([
+        {
+            "פתרון":              name,
+            "ציון התאמה (0–100)": score,
+            "הפחתת קטלניות":      f"{int(info['fatal']*100)}%",
+            "הפחתת קשות":         f"{int(info['serious']*100)}%",
+            "עלות":               info["cost"],
+            "תיאור":              info["desc"],
+        }
+        for name, score, info in ranked
+    ])
+
+    st.dataframe(
+        rank_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "ציון התאמה (0–100)": st.column_config.ProgressColumn(
+                "ציון התאמה (0–100)", min_value=0, max_value=100, format="%d"
+            )
+        },
+    )
+
+    # Expected impact chart
+    fig_imp = px.bar(
+        rank_df,
+        x="פתרון", y="ציון התאמה (0–100)",
+        color="ציון התאמה (0–100)",
+        color_continuous_scale="RdYlGn",
+        title="ציון התאמה לפי פתרון",
+    )
+    fig_imp.update_layout(coloraxis_showscale=False, xaxis_tickangle=-20)
+    st.plotly_chart(fig_imp, use_container_width=True)
+
+    st.markdown("---")
+    st.caption(
+        "⚠️ ההמלצות מבוססות על פרופיל התאונות ההיסטורי ונתוני ספרות בינלאומית. "
+        "לא כוללות נתוני נפח תנועה אמיתיים או מצב תשתית פיזית."
+    )
