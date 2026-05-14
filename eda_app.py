@@ -523,13 +523,58 @@ with tab_mgr:
 # ══════════════════════════════ PREDICTION TAB ════════════════════════════════
 with tab_pred:
     st.title("🔮 חיזוי פתרון תשתיתי לצומת")
-    st.caption("המערכת מנתחת את פרופיל התאונות ומדרגת פתרונות לפי צפי להפחתת קטלניות")
+    st.caption("לחץ על צומת במפה — המערכת תנתח את פרופיל התאונות ותמליץ על פתרון")
     st.markdown("---")
 
-    # ── Step 1: site selection ──
-    st.subheader("1️⃣  בחר אתר לניתוח")
+    # ── Interactive map ──
+    st.subheader("1️⃣  לחץ על צומת במפה")
+
+    sites_for_map = _score_sites("v1").dropna(subset=["lat", "lon"])
+
+    fig_pred_map = px.scatter_map(
+        sites_for_map,
+        lat="lat", lon="lon",
+        color="ציון_סיכון",
+        size="תאונות",
+        size_max=22,
+        custom_data=["אתר"],
+        hover_name="אתר",
+        hover_data={"תאונות": True, "ציון_סיכון": True, "דירוג": True,
+                    "lat": False, "lon": False},
+        color_continuous_scale="RdYlGn_r",
+        zoom=7, center={"lat": 31.8, "lon": 35.0},
+        map_style="carto-positron",
+        title="לחץ על צומת לקבלת המלצה",
+        height=480,
+    )
+    fig_pred_map.update_coloraxes(colorbar_title="ציון סיכון")
+    fig_pred_map.update_traces(marker=dict(opacity=0.85))
+
+    map_event = st.plotly_chart(
+        fig_pred_map, use_container_width=True,
+        on_select="rerun", selection_mode=["points"],
+        key="pred_map",
+    )
+
+    # Resolve selected site: map click → session state → selectbox
+    if "pred_site" not in st.session_state:
+        st.session_state["pred_site"] = sorted(df["אתר"].dropna().unique().tolist())[0]
+
+    if map_event.selection and map_event.selection.points:
+        clicked = map_event.selection.points[0].get("customdata", [None])
+        if clicked and clicked[0]:
+            st.session_state["pred_site"] = clicked[0]
+
     all_sites = sorted(df["אתר"].dropna().unique().tolist())
-    selected_site = st.selectbox("בחר צומת / אתר:", all_sites)
+    default_idx = all_sites.index(st.session_state["pred_site"]) if st.session_state["pred_site"] in all_sites else 0
+
+    selected_site = st.selectbox(
+        "או בחר ידנית מהרשימה:",
+        all_sites, index=default_idx, key="pred_selectbox",
+    )
+    st.session_state["pred_site"] = selected_site
+
+    st.markdown("---")
 
     site_df = df[df["אתר"] == selected_site]
     prof    = _accident_profile(site_df)
