@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import streamlit; import pandas; import plotly; print\\('OK'\\)\")",
+      "Bash(pip --version)",
+      "PowerShell(python --version)",
+      "PowerShell(pip --version)",
+      "PowerShell(py --version 2>&1)",
+      "PowerShell(winget --version)",
+      "PowerShell(winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); Set-Location \"c:\\\\Users\\\\amarz\\\\Desktop\\\\ammar\\\\1- ammar- eshi\\\\1- לימודים\\\\AI\"; Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"streamlit run eda_app.py\")",
+      "WebFetch(domain:data.gov.il)",
+      "WebSearch"
+    ]
+  }
+}

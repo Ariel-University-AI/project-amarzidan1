@@ -278,9 +278,17 @@ risk_display = risk_df[show_cols].copy()
 risk_display.columns = ["כביש / עיר", "מס' תאונות", "מס' נפגעים", "ציון סיכון (0-100)", "דירוג"]
 
 st.dataframe(
-    risk_display.style.background_gradient(subset=["ציון סיכון (0-100)"], cmap="RdYlGn_r"),
+    risk_display,
     use_container_width=True,
     height=400,
+    column_config={
+        "ציון סיכון (0-100)": st.column_config.ProgressColumn(
+            "ציון סיכון (0-100)",
+            min_value=0,
+            max_value=100,
+            format="%f",
+        )
+    }
 )
 
 # מפת סיכון
