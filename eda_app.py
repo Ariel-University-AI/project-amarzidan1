@@ -1,311 +1,438 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import requests
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
 
-st.set_page_config(page_title="EDA – תאונות דרכים בישראל", layout="wide", page_icon="🚗")
+st.set_page_config(
+    page_title="מוקדי סיכון — תשתיות תחבורה בישראל",
+    layout="wide",
+    page_icon="🚗",
+)
 
-@st.cache_data
-def load_data():
-    df = pd.read_csv("israel_road_accidents_simulated.csv")
+# ── Decode tables (CBS PUF documentation) ─────────────────────────────────────
+_SEV    = {1: "קטלנית", 2: "קשה", 3: "קלה"}
+_ROAD   = {1: "עירוני - בצומת", 2: "עירוני - לא בצומת",
+           3: "בין-עירוני - בצומת", 4: "בין-עירוני - לא בצומת",
+           5: "חניון / כיכר", 9: "אחר"}
+_WTHR   = {1: "בהיר", 2: "גשם קל", 3: "גשם", 4: "ערפל",
+           5: "חול", 7: "שלג", 8: "סופה", 9: "אחר"}
+_SURF   = {1: "יבש", 2: "רטוב", 3: "קפוא", 4: "שלג", 9: "אחר"}
+_DNTM   = {1: "יום", 5: "לילה"}
+_DWEEK  = {1: "ראשון", 2: "שני", 3: "שלישי", 4: "רביעי",
+           5: "חמישי", 6: "שישי", 7: "שבת"}
+_DIST   = {1: "ירושלים", 2: "צפון", 3: "חיפה",
+           4: "מרכז", 5: "תל אביב", 6: "דרום", 7: 'יו"ש'}
+_SPD    = {1: "30", 2: "40", 3: "50", 4: "60", 5: "70",
+           6: "80", 7: "90", 8: "100", 9: "110"}
+_ACCTYP = {1: "חזיתית", 2: "אחורית", 3: "צידית", 4: "הולך רגל",
+           5: "התהפכות", 6: "פגיעה בעמוד", 7: "נפילה מרכב", 8: "אחר"}
+_MONTHS = {1: "ינואר", 2: "פברואר", 3: "מרץ", 4: "אפריל", 5: "מאי",
+           6: "יוני", 7: "יולי", 8: "אוגוסט", 9: "ספטמבר",
+           10: "אוקטובר", 11: "נובמבר", 12: "דצמבר"}
+_DAY_ORDER = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"]
+
+# ── Coordinate conversion: ITM (EPSG:2039) → WGS84 ───────────────────────────
+def _itm_to_wgs84(x_s: pd.Series, y_s: pd.Series):
+    try:
+        from pyproj import Transformer
+        tr = Transformer.from_crs("EPSG:2039", "EPSG:4326", always_xy=True)
+        lon, lat = tr.transform(x_s.values, y_s.values)
+        return pd.Series(lat.round(6), index=x_s.index), pd.Series(lon.round(6), index=x_s.index)
+    except Exception:
+        lat = ((y_s - 626907) / 111320 + 31.5).round(5)
+        lon = ((x_s - 219529) / (111320 * 0.857) + 35.21).round(5)
+        return lat, lon
+
+# ── City names lookup ─────────────────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def _city_map() -> dict:
+    try:
+        r = requests.get(
+            "https://data.gov.il/api/3/action/datastore_search"
+            "?resource_id=5c78e9fa-c2e2-4771-93ff-7f400a12f7ba&limit=2000",
+            timeout=10,
+        )
+        rows = r.json()["result"]["records"]
+        return {int(c["סמל_ישוב"]): c["שם_ישוב"] for c in rows if c["סמל_ישוב"]}
+    except Exception:
+        return {}
+
+# ── Data loading & decoding ───────────────────────────────────────────────────
+@st.cache_data(show_spinner="טוען נתוני תאונות (למ\"ס PUF 2021)…")
+def load_data() -> pd.DataFrame:
+    city_map = _city_map()
+
+    df = pd.read_csv("data/accidents_israel_2021_raw.csv", low_memory=False)
     df.columns = df.columns.str.strip()
-    df["תאריך"] = pd.to_datetime(df["תאריך"], dayfirst=True, errors="coerce")
-    df["חודש"] = df["תאריך"].dt.month
-    df["שנה"] = df["תאריך"].dt.year
-    df["יום בשבוע"] = df["תאריך"].dt.day_name()
-    df["שעה_מספר"] = df["שעה"].str.split(":").str[0].astype(int, errors="ignore")
+
+    num_cols = [
+        "HUMRAT_TEUNA", "SUG_DEREH", "SUG_TEUNA", "MEZEG_AVIR", "PNE_KVISH",
+        "YOM_LAYLA", "YOM_BASHAVUA", "MAHOZ", "MEHIRUT_MUTERET",
+        "SEMEL_YISHUV", "KVISH1", "HODESH_TEUNA", "SHAA", "X", "Y",
+    ]
+    for c in num_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    df["חומרת_תאונה"]  = df["HUMRAT_TEUNA"].map(_SEV)
+    df["סוג_דרך"]      = df["SUG_DEREH"].map(_ROAD)
+    df["סוג_תאונה"]    = df["SUG_TEUNA"].map(_ACCTYP)
+    df["מזג_אוויר"]    = df["MEZEG_AVIR"].map(_WTHR)
+    df["מצב_כביש"]     = df["PNE_KVISH"].map(_SURF)
+    df["חלק_יממה"]     = df["YOM_LAYLA"].map(_DNTM)
+    df["יום_בשבוע"]    = df["YOM_BASHAVUA"].map(_DWEEK)
+    df["מחוז"]         = df["MAHOZ"].map(_DIST)
+    df["מהירות_מותרת"] = df["MEHIRUT_MUTERET"].map(_SPD)
+    df["חודש"]         = df["HODESH_TEUNA"].astype("Int64")
+    df["שעה"]          = (df["SHAA"].fillna(0) // 4).clip(0, 23).astype("Int64")
+    df["שם_חודש"]      = df["חודש"].map(_MONTHS)
+    df["יום_בשבוע"]    = pd.Categorical(df["יום_בשבוע"], categories=_DAY_ORDER, ordered=True)
+
+    # Location
+    df["שם_ישוב"] = df["SEMEL_YISHUV"].map(city_map)
+    df["כביש"]    = df["KVISH1"].where(df["KVISH1"].notna() & (df["KVISH1"] > 0))
+    df["מיקום"]   = df.apply(
+        lambda r: r["שם_ישוב"]
+        if pd.notna(r["שם_ישוב"]) and r["שם_ישוב"]
+        else (f"כביש {int(r['כביש'])}" if pd.notna(r["כביש"]) else "לא ידוע"),
+        axis=1,
+    )
+    df["אתר"] = df["מיקום"] + " – " + df["סוג_דרך"].fillna("לא ידוע")
+
+    # Coordinates (ITM → WGS84)
+    mask = df["X"].notna() & df["Y"].notna()
+    df["קו_רוחב"] = np.nan
+    df["קו_אורך"] = np.nan
+    lat, lon = _itm_to_wgs84(df.loc[mask, "X"], df.loc[mask, "Y"])
+    df.loc[mask, "קו_רוחב"] = lat.values
+    df.loc[mask, "קו_אורך"] = lon.values
+
     return df
 
+# ── ML model ──────────────────────────────────────────────────────────────────
+_FEAT_COLS = ["סוג_דרך", "מזג_אוויר", "מצב_כביש", "מהירות_מותרת",
+              "חלק_יממה", "מחוז", "סוג_תאונה"]
+
+@st.cache_resource(show_spinner="מאמן מודל Random Forest…")
+def _train_model():
+    df = load_data()
+    sub = df.dropna(subset=_FEAT_COLS + ["חומרת_תאונה"]).copy()
+
+    encs = {c: LabelEncoder() for c in _FEAT_COLS}
+    X = np.column_stack([encs[c].fit_transform(sub[c].astype(str)) for c in _FEAT_COLS])
+    y = sub["חומרת_תאונה"].map({"קלה": 0, "קשה": 1, "קטלנית": 2}).values
+
+    clf = RandomForestClassifier(n_estimators=150, random_state=42, n_jobs=-1)
+    clf.fit(X, y)
+
+    importance = pd.Series(clf.feature_importances_, index=_FEAT_COLS).sort_values(ascending=False)
+    return clf, encs, importance
+
+@st.cache_data(show_spinner="מחשב ציוני סיכון לאתרי תשתית…")
+def _score_sites(_v: str) -> pd.DataFrame:
+    df  = load_data()
+    clf, encs, _ = _train_model()
+
+    sub = df.dropna(subset=_FEAT_COLS).copy()
+    X_parts = []
+    for c in _FEAT_COLS:
+        col_str = sub[c].fillna("לא ידוע").astype(str)
+        col_str[~col_str.isin(encs[c].classes_)] = encs[c].classes_[0]
+        X_parts.append(encs[c].transform(col_str))
+    X = np.column_stack(X_parts)
+
+    proba = clf.predict_proba(X)
+    weights = np.array([0, 5, 20])
+    sub = sub.copy()
+    sub["ציון_גלמי"] = (proba * weights).sum(axis=1)
+
+    agg = (
+        sub.groupby("אתר")
+        .agg(
+            תאונות        = ("אתר",         "count"),
+            ציון_סיכון_גלמי = ("ציון_גלמי", "mean"),
+            lat           = ("קו_רוחב",     "mean"),
+            lon           = ("קו_אורך",     "mean"),
+            מחוז          = ("מחוז",        lambda x: x.mode().iloc[0] if len(x) else "—"),
+            סוג_דרך       = ("סוג_דרך",     lambda x: x.mode().iloc[0] if len(x) else "—"),
+        )
+        .reset_index()
+    )
+
+    mx = agg["ציון_סיכון_גלמי"].max()
+    agg["ציון_סיכון"] = (agg["ציון_סיכון_גלמי"] / mx * 100).round(1)
+    agg["דירוג"] = agg["ציון_סיכון"].apply(
+        lambda s: "🔴 גבוה" if s >= 60 else ("🟡 בינוני" if s >= 30 else "🟢 נמוך")
+    )
+    agg = agg.sort_values("ציון_סיכון", ascending=False).reset_index(drop=True)
+    agg.index += 1
+    return agg
+
+# ── Load data ─────────────────────────────────────────────────────────────────
 df = load_data()
 
-DAYS_HE = {"Monday":"שני","Tuesday":"שלישי","Wednesday":"רביעי",
-           "Thursday":"חמישי","Friday":"שישי","Saturday":"שבת","Sunday":"ראשון"}
-df["יום בשבוע עב"] = df["יום בשבוע"].map(DAYS_HE)
-
-# ── Sidebar filters ───────────────────────────────────────────────────────────
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("🔧 סינון נתונים")
-    cities = ["הכל"] + sorted(df["עיר או כביש"].dropna().unique().tolist())
-    city_sel = st.selectbox("עיר / כביש:", cities)
-    severity_sel = st.multiselect("חומרת תאונה:", df["חומרת התאונה"].dropna().unique().tolist(),
-                                   default=df["חומרת התאונה"].dropna().unique().tolist())
-    weather_sel = st.multiselect("מזג אוויר:", df["מזג_אוויר"].dropna().unique().tolist(),
-                                  default=df["מזג_אוויר"].dropna().unique().tolist())
+    dist_opts = ["הכל"] + sorted(df["מחוז"].dropna().unique().tolist())
+    dist_sel  = st.selectbox("מחוז:", dist_opts)
+    sev_opts  = sorted(df["חומרת_תאונה"].dropna().unique().tolist())
+    sev_sel   = st.multiselect("חומרת תאונה:", sev_opts, default=sev_opts)
+    wthr_opts = sorted(df["מזג_אוויר"].dropna().unique().tolist())
+    wthr_sel  = st.multiselect("מזג אוויר:", wthr_opts, default=wthr_opts)
 
-filtered = df.copy()
-if city_sel != "הכל":
-    filtered = filtered[filtered["עיר או כביש"] == city_sel]
-if severity_sel:
-    filtered = filtered[filtered["חומרת התאונה"].isin(severity_sel)]
-if weather_sel:
-    filtered = filtered[filtered["מזג_אוויר"].isin(weather_sel)]
+flt = df.copy()
+if dist_sel != "הכל":
+    flt = flt[flt["מחוז"] == dist_sel]
+if sev_sel:
+    flt = flt[flt["חומרת_תאונה"].isin(sev_sel)]
+if wthr_sel:
+    flt = flt[flt["מזג_אוויר"].isin(wthr_sel)]
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.title("🔍 ניתוח חקרני (EDA) – תאונות דרכים בישראל")
-st.caption(f"מציג {len(filtered):,} תאונות מתוך {len(df):,}")
-st.markdown("---")
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab_eda, tab_mgr = st.tabs(["📊 ניתוח חקרני (EDA)", "🎯 ממשק מנהל — מוקדי סיכון"])
 
-# ── KPI cards ─────────────────────────────────────────────────────────────────
-k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("סה\"כ תאונות", f"{len(filtered):,}")
-k2.metric("סה\"כ נפגעים", f"{filtered['מספר_נפגעים'].sum():,}")
-k3.metric("תאונות קטלניות", f"{(filtered['חומרת התאונה']=='קטלנית').sum():,}")
-k4.metric("תאונות קשות", f"{(filtered['חומרת התאונה']=='קשה').sum():,}")
-k5.metric("ממוצע רכבים לתאונה", f"{filtered['מספר הרכבים המשתטפים'].mean():.1f}")
+# ══════════════════════════════ EDA TAB ═══════════════════════════════════════
+with tab_eda:
+    st.title("🔍 ניתוח חקרני — תאונות דרכים ישראל 2021")
+    st.caption(f"מציג {len(flt):,} תאונות מתוך {len(df):,} | מקור: למ\"ס PUF 2021")
+    st.markdown("---")
 
-st.markdown("---")
+    # KPIs
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("סה\"כ תאונות",       f"{len(flt):,}")
+    k2.metric("קטלניות",            f"{(flt['חומרת_תאונה'] == 'קטלנית').sum():,}")
+    k3.metric("קשות",               f"{(flt['חומרת_תאונה'] == 'קשה').sum():,}")
+    k4.metric("קלות",               f"{(flt['חומרת_תאונה'] == 'קלה').sum():,}")
+    pct = (flt["חומרת_תאונה"].isin(["קטלנית", "קשה"])).sum() / max(len(flt), 1) * 100
+    k5.metric("% קשות + קטלניות",   f"{pct:.1f}%")
 
-# ── Row 1: חומרה + מזג אוויר ──────────────────────────────────────────────────
-st.subheader("📊 התפלגות לפי קטגוריות")
-c1, c2, c3 = st.columns(3)
+    st.markdown("---")
 
-with c1:
-    sev = filtered["חומרת התאונה"].value_counts().reset_index()
-    sev.columns = ["חומרה", "כמות"]
-    colors = {"קלה": "#2ecc71", "קשה": "#e67e22", "קטלנית": "#e74c3c"}
-    fig = px.pie(sev, names="חומרה", values="כמות", title="חומרת תאונות",
-                 color="חומרה", color_discrete_map=colors, hole=0.4)
-    fig.update_traces(textposition="inside", textinfo="percent+label")
-    st.plotly_chart(fig, use_container_width=True)
+    # ── Row 1: severity + weather + road surface ──
+    st.subheader("📊 התפלגות לפי קטגוריות")
+    c1, c2, c3 = st.columns(3)
 
-with c2:
-    weather = filtered["מזג_אוויר"].value_counts().reset_index()
-    weather.columns = ["מזג אוויר", "כמות"]
-    fig = px.bar(weather, x="מזג אוויר", y="כמות", title="תאונות לפי מזג אוויר",
-                 color="כמות", color_continuous_scale="Blues")
-    fig.update_layout(showlegend=False, coloraxis_showscale=False)
-    st.plotly_chart(fig, use_container_width=True)
+    with c1:
+        sev = flt["חומרת_תאונה"].value_counts().reset_index()
+        sev.columns = ["חומרה", "כמות"]
+        fig = px.pie(sev, names="חומרה", values="כמות", title="חומרת תאונות",
+                     color="חומרה",
+                     color_discrete_map={"קלה": "#2ecc71", "קשה": "#e67e22", "קטלנית": "#e74c3c"},
+                     hole=0.4)
+        fig.update_traces(textposition="inside", textinfo="percent+label")
+        st.plotly_chart(fig, use_container_width=True)
 
-with c3:
-    traffic = filtered["עומס_תנועה"].value_counts().reset_index()
-    traffic.columns = ["עומס", "כמות"]
-    fig = px.bar(traffic, x="עומס", y="כמות", title="תאונות לפי עומס תנועה",
-                 color="כמות", color_continuous_scale="Oranges")
-    fig.update_layout(showlegend=False, coloraxis_showscale=False)
-    st.plotly_chart(fig, use_container_width=True)
+    with c2:
+        wthr = flt["מזג_אוויר"].value_counts().reset_index()
+        wthr.columns = ["מזג אוויר", "כמות"]
+        fig = px.bar(wthr, x="מזג אוויר", y="כמות", title="לפי מזג אוויר",
+                     color="כמות", color_continuous_scale="Blues")
+        fig.update_layout(showlegend=False, coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("---")
+    with c3:
+        surf = flt["מצב_כביש"].value_counts().reset_index()
+        surf.columns = ["מצב כביש", "כמות"]
+        fig = px.bar(surf, x="מצב כביש", y="כמות", title="לפי מצב כביש",
+                     color="כמות", color_continuous_scale="Oranges")
+        fig.update_layout(showlegend=False, coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
 
-# ── Row 2: זמן ───────────────────────────────────────────────────────────────
-st.subheader("⏰ ניתוח זמני")
-t1, t2 = st.columns(2)
+    st.markdown("---")
 
-with t1:
-    hour_data = filtered.groupby("שעה_מספר").size().reset_index(name="כמות")
-    fig = px.bar(hour_data, x="שעה_מספר", y="כמות",
-                 title="תאונות לפי שעה ביום",
-                 labels={"שעה_מספר": "שעה", "כמות": "מספר תאונות"},
-                 color="כמות", color_continuous_scale="Reds")
-    fig.update_layout(coloraxis_showscale=False)
-    st.plotly_chart(fig, use_container_width=True)
+    # ── Row 2: Time ──
+    st.subheader("⏰ ניתוח זמני")
+    t1, t2 = st.columns(2)
 
-with t2:
-    day_order = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"]
-    day_data = filtered.groupby("יום בשבוע עב").size().reset_index(name="כמות")
-    day_data["יום בשבוע עב"] = pd.Categorical(day_data["יום בשבוע עב"], categories=day_order, ordered=True)
-    day_data = day_data.sort_values("יום בשבוע עב")
-    fig = px.bar(day_data, x="יום בשבוע עב", y="כמות",
-                 title="תאונות לפי יום בשבוע",
-                 labels={"יום בשבוע עב": "יום", "כמות": "מספר תאונות"},
-                 color="כמות", color_continuous_scale="Purples")
-    fig.update_layout(coloraxis_showscale=False)
-    st.plotly_chart(fig, use_container_width=True)
+    with t1:
+        hour_data = flt.groupby("שעה", observed=True).size().reset_index(name="כמות")
+        fig = px.bar(hour_data, x="שעה", y="כמות", title="תאונות לפי שעה ביום",
+                     color="כמות", color_continuous_scale="Reds")
+        fig.update_layout(coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("---")
+    with t2:
+        day_data = flt.groupby("יום_בשבוע", observed=True).size().reset_index(name="כמות")
+        fig = px.bar(day_data, x="יום_בשבוע", y="כמות", title="תאונות לפי יום בשבוע",
+                     color="כמות", color_continuous_scale="Purples")
+        fig.update_layout(coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
 
-# ── Row 3: חודשי + סוג דרך ───────────────────────────────────────────────────
-m1, m2 = st.columns(2)
+    st.markdown("---")
 
-with m1:
-    month_names = {1:"ינואר",2:"פברואר",3:"מרץ",4:"אפריל",5:"מאי",6:"יוני",
-                   7:"יולי",8:"אוגוסט",9:"ספטמבר",10:"אוקטובר",11:"נובמבר",12:"דצמבר"}
-    month_data = filtered.groupby("חודש").size().reset_index(name="כמות")
-    month_data["שם חודש"] = month_data["חודש"].map(month_names)
-    fig = px.line(month_data, x="חודש", y="כמות",
-                  title="תאונות לפי חודש",
-                  labels={"חודש": "חודש", "כמות": "מספר תאונות"},
-                  markers=True, color_discrete_sequence=["#3498db"])
-    fig.update_xaxes(tickvals=list(range(1,13)), ticktext=list(month_names.values()))
-    st.plotly_chart(fig, use_container_width=True)
+    # ── Row 3: Month + road type ──
+    m1, m2 = st.columns(2)
 
-with m2:
-    road_sev = filtered.groupby(["סוג_דרך", "חומרת התאונה"]).size().reset_index(name="כמות")
-    fig = px.bar(road_sev, x="סוג_דרך", y="כמות", color="חומרת התאונה",
-                 title="סוג דרך לפי חומרה",
-                 color_discrete_map={"קלה":"#2ecc71","קשה":"#e67e22","קטלנית":"#e74c3c"},
-                 barmode="stack")
-    fig.update_layout(xaxis_tickangle=-20)
-    st.plotly_chart(fig, use_container_width=True)
+    with m1:
+        month_data = flt.groupby("חודש", observed=True).size().reset_index(name="כמות")
+        month_data["שם"] = month_data["חודש"].map(_MONTHS)
+        fig = px.line(month_data, x="חודש", y="כמות", title="תאונות לפי חודש",
+                      markers=True, color_discrete_sequence=["#3498db"])
+        fig.update_xaxes(tickvals=list(range(1, 13)), ticktext=list(_MONTHS.values()))
+        st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("---")
+    with m2:
+        rd = flt.groupby(["סוג_דרך", "חומרת_תאונה"], observed=True).size().reset_index(name="כמות")
+        fig = px.bar(rd, x="סוג_דרך", y="כמות", color="חומרת_תאונה",
+                     title="סוג דרך לפי חומרה",
+                     color_discrete_map={"קלה": "#2ecc71", "קשה": "#e67e22", "קטלנית": "#e74c3c"},
+                     barmode="stack")
+        fig.update_layout(xaxis_tickangle=-25)
+        st.plotly_chart(fig, use_container_width=True)
 
-# ── Row 4: ערים + נפגעים ─────────────────────────────────────────────────────
-st.subheader("🏙️ ניתוח לפי מיקום")
-ci1, ci2 = st.columns(2)
+    st.markdown("---")
 
-with ci1:
-    top_cities = filtered["עיר או כביש"].value_counts().head(10).reset_index()
-    top_cities.columns = ["עיר", "כמות"]
-    fig = px.bar(top_cities, x="כמות", y="עיר", orientation="h",
-                 title="10 מיקומים עם הכי הרבה תאונות",
-                 color="כמות", color_continuous_scale="Reds")
-    fig.update_layout(yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
-    st.plotly_chart(fig, use_container_width=True)
+    # ── Row 4: District + speed ──
+    st.subheader("🏙️ ניתוח לפי מיקום ומהירות")
+    d1, d2 = st.columns(2)
 
-with ci2:
-    victims = filtered.groupby("עיר או כביש")["מספר_נפגעים"].sum().sort_values(ascending=False).head(10).reset_index()
-    victims.columns = ["עיר", "נפגעים"]
-    fig = px.bar(victims, x="נפגעים", y="עיר", orientation="h",
-                 title="10 מיקומים עם הכי הרבה נפגעים",
-                 color="נפגעים", color_continuous_scale="Oranges")
-    fig.update_layout(yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
-    st.plotly_chart(fig, use_container_width=True)
+    with d1:
+        dist_data = flt["מחוז"].value_counts().reset_index()
+        dist_data.columns = ["מחוז", "כמות"]
+        fig = px.bar(dist_data, x="כמות", y="מחוז", orientation="h",
+                     title="תאונות לפי מחוז",
+                     color="כמות", color_continuous_scale="Reds")
+        fig.update_layout(yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
+        st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("---")
+    with d2:
+        spd = flt.groupby(["מהירות_מותרת", "חומרת_תאונה"], observed=True).size().reset_index(name="כמות")
+        fig = px.bar(spd, x="מהירות_מותרת", y="כמות", color="חומרת_תאונה",
+                     title="חומרה לפי מהירות מותרת (קמ\"ש)",
+                     color_discrete_map={"קלה": "#2ecc71", "קשה": "#e67e22", "קטלנית": "#e74c3c"},
+                     barmode="stack",
+                     category_orders={"מהירות_מותרת": ["30","40","50","60","70","80","90","100","110"]})
+        st.plotly_chart(fig, use_container_width=True)
 
-# ── מפה ──────────────────────────────────────────────────────────────────────
-st.subheader("🗺️ מפת תאונות")
-map_data = filtered.dropna(subset=["קו_רוחב", "קו_אורך"])
-color_map = {"קלה": "green", "קשה": "orange", "קטלנית": "red"}
-fig_map = px.scatter_mapbox(
-    map_data, lat="קו_רוחב", lon="קו_אורך",
-    color="חומרת התאונה",
-    color_discrete_map=color_map,
-    hover_name="עיר או כביש",
-    hover_data={"מספר_נפגעים": True, "מזג_אוויר": True, "עומס_תנועה": True,
-                "קו_רוחב": False, "קו_אורך": False},
-    size="מספר_נפגעים", size_max=15,
-    zoom=7, center={"lat": 31.8, "lon": 35.0},
-    mapbox_style="carto-positron",
-    title="פיזור תאונות על מפת ישראל",
-    height=500,
-)
-st.plotly_chart(fig_map, use_container_width=True)
+    st.markdown("---")
 
-st.markdown("---")
-
-# ── סיכום סטטיסטי ────────────────────────────────────────────────────────────
-st.subheader("📋 סיכום סטטיסטי")
-tab_num, tab_cat = st.tabs(["עמודות מספריות", "עמודות קטגוריאליות"])
-
-with tab_num:
-    num_cols = ["מספר_נפגעים", "מספר הרכבים המשתטפים", "שעה_מספר", "חודש"]
-    stats = filtered[num_cols].agg(["mean","median","std","min","max"]).T.round(2)
-    stats.columns = ["ממוצע","חציון","סטיית תקן","מינימום","מקסימום"]
-    st.dataframe(stats, use_container_width=True)
-
-with tab_cat:
-    cat_cols = ["חומרת התאונה","מזג_אוויר","עומס_תנועה","סוג_דרך","חלק מהיום"]
-    rows = []
-    for c in cat_cols:
-        vc = filtered[c].value_counts()
-        rows.append({"עמודה": c,
-                     "ערכים ייחודיים": filtered[c].nunique(),
-                     "ערך נפוץ": vc.index[0] if len(vc) else "—",
-                     "תדירות": int(vc.iloc[0]) if len(vc) else 0,
-                     "ערכים חסרים": int(filtered[c].isnull().sum())})
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
-st.markdown("---")
-
-# ── המלצת כביש בטוח ──────────────────────────────────────────────────────────
-st.header("🛡️ המלצת כביש בטוח")
-st.write("בחר עיר או כביש מוצא ויעד — המערכת תדרג את כל האפשרויות לפי ציון סיכון.")
-
-SEVERITY_WEIGHT = {"קלה": 1, "קשה": 5, "קטלנית": 20}
-
-@st.cache_data
-def calc_risk(data):
-    data = data.copy()
-    data["ציון_חומרה"] = data["חומרת התאונה"].map(SEVERITY_WEIGHT).fillna(1)
-    risk = data.groupby("עיר או כביש").agg(
-        תאונות=("מזהה תאונה", "count"),
-        נפגעים=("מספר_נפגעים", "sum"),
-        ציון_סיכון_גולמי=("ציון_חומרה", "sum"),
-        lat=("קו_רוחב", "mean"),
-        lon=("קו_אורך", "mean"),
-    ).reset_index()
-    max_score = risk["ציון_סיכון_גולמי"].max()
-    risk["ציון_סיכון"] = (risk["ציון_סיכון_גולמי"] / max_score * 100).round(1)
-    risk["דירוג_בטיחות"] = risk["ציון_סיכון"].apply(
-        lambda x: "🟢 בטוח" if x < 20 else ("🟡 בינוני" if x < 50 else "🔴 מסוכן")
-    )
-    return risk.sort_values("ציון_סיכון")
-
-risk_df = calc_risk(df)
-
-all_locations = sorted(df["עיר או כביש"].dropna().unique().tolist())
-
-rec1, rec2 = st.columns(2)
-with rec1:
-    origin = st.selectbox("📍 מוצא:", all_locations, key="origin")
-with rec2:
-    dest_options = [l for l in all_locations if l != origin]
-    destination = st.selectbox("🏁 יעד:", dest_options, key="dest")
-
-# הצג ציון כביש מוצא ויעד
-orig_row = risk_df[risk_df["עיר או כביש"] == origin]
-dest_row = risk_df[risk_df["עיר או כביש"] == destination]
-
-r1, r2, r3 = st.columns(3)
-if not orig_row.empty:
-    r1.metric(f"ציון סיכון — {origin}",
-              f"{orig_row['ציון_סיכון'].values[0]}/100",
-              orig_row['דירוג_בטיחות'].values[0])
-if not dest_row.empty:
-    r2.metric(f"ציון סיכון — {destination}",
-              f"{dest_row['ציון_סיכון'].values[0]}/100",
-              dest_row['דירוג_בטיחות'].values[0])
-
-avg_score = 0
-if not orig_row.empty and not dest_row.empty:
-    avg_score = round((orig_row['ציון_סיכון'].values[0] + dest_row['ציון_סיכון'].values[0]) / 2, 1)
-    if avg_score < 20:
-        verdict = "✅ המסלול בטוח יחסית"
-        color = "success"
-    elif avg_score < 50:
-        verdict = "⚠️ המסלול בסיכון בינוני — נסע בזהירות"
-        color = "warning"
-    else:
-        verdict = "🚨 המסלול מסוכן — שקול מסלול חלופי"
-        color = "error"
-    r3.metric("ציון סיכון ממוצע למסלול", f"{avg_score}/100")
-    getattr(st, color)(verdict)
-
-st.markdown("#### 📊 דירוג כל הכבישים לפי בטיחות")
-
-show_cols = ["עיר או כביש", "תאונות", "נפגעים", "ציון_סיכון", "דירוג_בטיחות"]
-risk_display = risk_df[show_cols].copy()
-risk_display.columns = ["כביש / עיר", "מס' תאונות", "מס' נפגעים", "ציון סיכון (0-100)", "דירוג"]
-
-st.dataframe(
-    risk_display,
-    use_container_width=True,
-    height=400,
-    column_config={
-        "ציון סיכון (0-100)": st.column_config.ProgressColumn(
-            "ציון סיכון (0-100)",
-            min_value=0,
-            max_value=100,
-            format="%f",
+    # ── Map ──
+    st.subheader("🗺️ מפת תאונות")
+    map_data = flt.dropna(subset=["קו_רוחב", "קו_אורך"])
+    if len(map_data) > 0:
+        sample = map_data.sample(min(3000, len(map_data)), random_state=1)
+        fig_map = px.scatter_map(
+            sample,
+            lat="קו_רוחב", lon="קו_אורך",
+            color="חומרת_תאונה",
+            color_discrete_map={"קלה": "green", "קשה": "orange", "קטלנית": "red"},
+            hover_data={"מיקום": True, "מזג_אוויר": True, "סוג_דרך": True,
+                        "קו_רוחב": False, "קו_אורך": False},
+            zoom=7, center={"lat": 31.8, "lon": 35.0},
+            map_style="carto-positron",
+            title="פיזור תאונות על מפת ישראל",
+            height=520,
         )
-    }
-)
+        st.plotly_chart(fig_map, use_container_width=True)
+    else:
+        st.info("אין נתוני מיקום לתצוגה בסינון הנוכחי")
 
-# מפת סיכון
-st.markdown("#### 🗺️ מפת ציוני סיכון")
-map_risk = risk_df.dropna(subset=["lat", "lon"])
-fig_risk = px.scatter_mapbox(
-    map_risk, lat="lat", lon="lon",
-    color="ציון_סיכון",
-    size="תאונות",
-    size_max=20,
-    hover_name="עיר או כביש",
-    hover_data={"תאונות": True, "נפגעים": True, "ציון_סיכון": True, "lat": False, "lon": False},
-    color_continuous_scale="RdYlGn_r",
-    zoom=7, center={"lat": 31.8, "lon": 35.0},
-    mapbox_style="carto-positron",
-    title="מפת סיכון — ירוק=בטוח, אדום=מסוכן",
-    height=500,
-)
-fig_risk.update_coloraxes(colorbar_title="ציון סיכון")
-st.plotly_chart(fig_risk, use_container_width=True)
+    st.markdown("---")
+
+    # ── Statistical summary ──
+    st.subheader("📋 סיכום סטטיסטי")
+    tab_cat, = st.tabs(["עמודות קטגוריאליות"])
+    with tab_cat:
+        cat_cols = ["חומרת_תאונה", "סוג_דרך", "מזג_אוויר", "מצב_כביש", "חלק_יממה"]
+        rows = []
+        for c in cat_cols:
+            vc = flt[c].value_counts()
+            rows.append({
+                "עמודה":           c,
+                "ערכים ייחודיים": flt[c].nunique(),
+                "ערך נפוץ":        vc.index[0] if len(vc) else "—",
+                "תדירות":          int(vc.iloc[0]) if len(vc) else 0,
+                "ערכים חסרים":     int(flt[c].isnull().sum()),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+# ══════════════════════════════ MANAGER TAB ═══════════════════════════════════
+with tab_mgr:
+    st.title("🎯 ממשק מנהל — דירוג מוקדי סיכון בתשתיות תחבורה")
+    st.caption("מודל Random Forest | נתוני למ\"ס PUF 2021 — 11,554 תאונות אמיתיות")
+    st.markdown("---")
+
+    clf, encs, importance = _train_model()
+    sites = _score_sites("v1")
+
+    sites_flt = sites[sites["מחוז"] == dist_sel] if dist_sel != "הכל" else sites
+
+    # KPIs
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("סה\"כ אתרי תשתית",   f"{len(sites_flt):,}")
+    m2.metric("🔴 סיכון גבוה",       f"{(sites_flt['דירוג'] == '🔴 גבוה').sum():,}")
+    m3.metric("🟡 סיכון בינוני",     f"{(sites_flt['דירוג'] == '🟡 בינוני').sum():,}")
+    m4.metric("🟢 סיכון נמוך",       f"{(sites_flt['דירוג'] == '🟢 נמוך').sum():,}")
+
+    st.markdown("---")
+
+    # Ranked table
+    st.subheader("📋 טבלת עדיפויות לטיפול תשתיתי")
+
+    risk_filter = st.multiselect(
+        "סנן לפי רמת סיכון:",
+        ["🔴 גבוה", "🟡 בינוני", "🟢 נמוך"],
+        default=["🔴 גבוה", "🟡 בינוני", "🟢 נמוך"],
+    )
+    tbl = sites_flt[sites_flt["דירוג"].isin(risk_filter)].copy()
+
+    show = tbl[["אתר", "מחוז", "סוג_דרך", "תאונות", "ציון_סיכון", "דירוג"]].copy()
+    show.columns = ["אתר תשתית", "מחוז", "סוג דרך", "מס' תאונות", "ציון סיכון (0–100)", "דירוג"]
+
+    st.dataframe(
+        show,
+        use_container_width=True,
+        height=460,
+        column_config={
+            "ציון סיכון (0–100)": st.column_config.ProgressColumn(
+                "ציון סיכון (0–100)", min_value=0, max_value=100, format="%.1f"
+            )
+        },
+    )
+
+    csv_bytes = show.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
+    st.download_button("⬇️ ייצוא לCSV", csv_bytes, "hotspots_risk.csv", "text/csv")
+
+    st.markdown("---")
+
+    # Feature importance
+    st.subheader("🔍 גורמי סיכון מרכזיים — Feature Importance")
+    imp_df = importance.reset_index()
+    imp_df.columns = ["גורם", "חשיבות"]
+    fig_imp = px.bar(
+        imp_df, x="חשיבות", y="גורם", orientation="h",
+        color="חשיבות", color_continuous_scale="Reds",
+        title="אילו גורמים מסבירים את חומרת התאונה?",
+    )
+    fig_imp.update_layout(yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
+    st.plotly_chart(fig_imp, use_container_width=True)
+
+    st.markdown("---")
+
+    # Risk map
+    st.subheader("🗺️ מפת חום — ריכוזי סיכון")
+    map_sites = tbl.dropna(subset=["lat", "lon"])
+    if len(map_sites) > 0:
+        fig_risk = px.scatter_map(
+            map_sites,
+            lat="lat", lon="lon",
+            color="ציון_סיכון",
+            size="תאונות",
+            size_max=28,
+            hover_name="אתר",
+            hover_data={"תאונות": True, "ציון_סיכון": True, "דירוג": True,
+                        "lat": False, "lon": False},
+            color_continuous_scale="RdYlGn_r",
+            zoom=7, center={"lat": 31.8, "lon": 35.0},
+            map_style="carto-positron",
+            title="מפת סיכון — אדום=גבוה, ירוק=נמוך",
+            height=560,
+        )
+        fig_risk.update_coloraxes(colorbar_title="ציון סיכון")
+        st.plotly_chart(fig_risk, use_container_width=True)
+    else:
+        st.info("אין נתוני מיקום לתצוגה בסינון הנוכחי")
