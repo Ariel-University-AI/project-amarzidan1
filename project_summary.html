@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>סיכום פרויקט — חיזוי מוקדי סיכון</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;600;700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Heebo', Arial, sans-serif;
+    direction: rtl;
+    background: #f8f9fa;
+    color: #2d3436;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+
+  .cover {
+    background: linear-gradient(135deg, #1a237e 0%, #0d47a1 50%, #1565c0 100%);
+    color: white;
+    padding: 60px 40px;
+    text-align: center;
+    page-break-after: always;
+  }
+  .cover h1 { font-size: 32px; font-weight: 800; margin-bottom: 10px; }
+  .cover h2 { font-size: 20px; font-weight: 300; margin-bottom: 30px; opacity: 0.9; }
+  .cover .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    border: 2px solid rgba(255,255,255,0.5);
+    border-radius: 50px;
+    padding: 8px 24px;
+    font-size: 13px;
+    margin: 6px;
+  }
+  .cover .stats {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-top: 40px;
+  }
+  .cover .stat-box {
+    background: rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 20px 30px;
+    text-align: center;
+  }
+  .cover .stat-num { font-size: 36px; font-weight: 800; }
+  .cover .stat-label { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 30px 40px; }
+
+  h1 { font-size: 26px; font-weight: 800; color: #1a237e; border-bottom: 3px solid #1a237e; padding-bottom: 10px; margin: 30px 0 16px; }
+  h2 { font-size: 20px; font-weight: 700; color: #0d47a1; margin: 24px 0 12px; }
+  h3 { font-size: 16px; font-weight: 600; color: #1565c0; margin: 18px 0 8px; }
+
+  p { margin-bottom: 12px; }
+
+  .highlight-box {
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    border-right: 5px solid #1a237e;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .metric-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    border-top: 4px solid #1a237e;
+  }
+  .metric-card .num { font-size: 28px; font-weight: 800; color: #1a237e; }
+  .metric-card .label { font-size: 12px; color: #636e72; margin-top: 4px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13px;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  th {
+    background: #1a237e;
+    color: white;
+    padding: 12px 16px;
+    font-weight: 600;
+    text-align: right;
+  }
+  td { padding: 10px 16px; border-bottom: 1px solid #ecf0f1; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: #f8f9fa; }
+
+  .step-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 12px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .step-num {
+    background: #1a237e;
+    color: white;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .step-content h3 { margin: 0 0 6px; color: #2d3436; }
+  .step-content p { margin: 0; color: #636e72; font-size: 13px; }
+
+  .code-block {
+    background: #2d3436;
+    color: #dfe6e9;
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    margin: 12px 0;
+    direction: ltr;
+    text-align: left;
+    line-height: 1.8;
+  }
+
+  .feature-bar {
+    display: flex;
+    align-items: center;
+    margin: 8px 0;
+    gap: 12px;
+  }
+  .feature-name { width: 180px; font-size: 13px; font-weight: 600; }
+  .bar-container { flex: 1; background: #ecf0f1; border-radius: 20px; height: 18px; }
+  .bar-fill { height: 100%; border-radius: 20px; background: linear-gradient(90deg, #1a237e, #42a5f5); }
+  .bar-pct { width: 50px; font-size: 12px; font-weight: 700; color: #1a237e; text-align: left; }
+
+  .qa-box {
+    background: white;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 10px 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-right: 4px solid #42a5f5;
+  }
+  .qa-box .question { font-weight: 700; color: #1a237e; margin-bottom: 6px; font-size: 14px; }
+  .qa-box .answer { color: #2d3436; font-size: 13px; }
+
+  .demo-step {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid #ecf0f1;
+  }
+  .demo-step:last-child { border-bottom: none; }
+  .demo-time { font-weight: 700; color: #1a237e; width: 50px; flex-shrink: 0; }
+  .demo-desc { flex: 1; font-size: 13px; }
+
+  .tag {
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1a237e;
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 3px;
+  }
+
+  .success { color: #00b894; font-weight: 700; }
+  .warning { color: #e17055; font-weight: 700; }
+
+  .page-break { page-break-before: always; }
+
+  .footer {
+    background: #1a237e;
+    color: white;
+    text-align: center;
+    padding: 20px;
+    margin-top: 40px;
+    font-size: 13px;
+    opacity: 0.9;
+  }
+
+  @media print {
+    body { background: white; }
+    .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .metric-card, .step-box, .qa-box, table { box-shadow: none; border: 1px solid #ecf0f1; }
+    .no-print { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PRINT BUTTON -->
+<div class="no-print" style="position:fixed;top:20px;left:20px;z-index:999;">
+  <button onclick="window.print()" style="background:#1a237e;color:white;border:none;padding:12px 24px;border-radius:8px;font-size:15px;cursor:pointer;font-family:Heebo,Arial;font-weight:700;">
+    🖨️ הדפס / שמור כ-PDF
+  </button>
+</div>
+
+<!-- COVER PAGE -->
+<div class="cover">
+  <div style="font-size:14px;opacity:0.7;margin-bottom:10px;">אוניברסיטת אריאל — פרויקט בינה מלאכותית</div>
+  <h1>🚗 חיזוי מוקדי סיכון<br>בתשתיות תחבורה בישראל</h1>
+  <h2>מערכת תומכת-החלטה מבוססת ML לדירוג צמתים מסוכנים</h2>
+
+  <div style="margin:20px 0;">
+    <span class="badge">📊 Random Forest</span>
+    <span class="badge">🗄️ CBS PUF 2021</span>
+    <span class="badge">🌐 Streamlit</span>
+    <span class="badge">🐍 Python 3.9</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat-box">
+      <div class="stat-num">11,554</div>
+      <div class="stat-label">תאונות אמיתיות</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">81.4%</div>
+      <div class="stat-label">Accuracy המודל</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">6</div>
+      <div class="stat-label">סוגי התערבות</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">211</div>
+      <div class="stat-label">אתרים שנותחו</div>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;font-size:13px;opacity:0.7;">מאי 2026</div>
+</div>
+
+<!-- CONTENT -->
+<div class="container">
+
+  <!-- מה הפרויקט -->
+  <h1>1. מה הפרויקט עושה?</h1>
+
+  <div class="highlight-box">
+    💡 מערכת שמנתחת 11,554 תאונות דרכים אמיתיות, מדרגת צמתים לפי סיכון, ומחזה אוטומטית מה צריך לבנות בכל צומת כדי להפחית תאונות.
+  </div>
+
+  <h2>הבעיה שפתרנו</h2>
+  <div class="step-box">
+    <div class="step-num">❓</div>
+    <div class="step-content">
+      <h3>יש אלפי צמתים בישראל ותקציב מוגבל</h3>
+      <p>איפה להשקיע קודם? ומה לבנות שם — כיכר תנועה? רמזור? מצלמת אכיפה? עד היום זה הסתמך על ניסיון אישי של מהנדסים.</p>
+    </div>
+  </div>
+  <div class="step-box">
+    <div class="step-num">✅</div>
+    <div class="step-content">
+      <h3>הפתרון שלנו</h3>
+      <p>מודל ML שמנתח את פרופיל התאונות של כל צומת ומחזה אוטומטית את הפתרון האופטימלי — עם 81.4% דיוק.</p>
+    </div>
+  </div>
+
+  <!-- הנתונים -->
+  <h1>2. הנתונים</h1>
+
+  <table>
+    <tr>
+      <th>פרמטר</th><th>ערך</th>
+    </tr>
+    <tr><td>מקור</td><td>למ"ס — הלשכה המרכזית לסטטיסטיקה, data.gov.il</td></tr>
+    <tr><td>שנה</td><td>2021 (CBS PUF — Public Use File)</td></tr>
+    <tr><td>מספר רשומות</td><td>11,554 תאונות</td></tr>
+    <tr><td>עמודות מרכזיות</td><td>שעה, יום, מחוז, סוג דרך, מזג אוויר, מהירות, חומרת תאונה, קואורדינטות</td></tr>
+    <tr><td>פורמט</td><td>CSV עם קודים מספריים (CBS encoding)</td></tr>
+  </table>
+
+  <h3>פענוח קודי CBS</h3>
+  <p>הנתונים הגיעו בקודים מספריים — כתבנו קוד לפענוח מלא:</p>
+  <div class="code-block">
+HUMRAT_TEUNA: {1: "קטלנית", 2: "קשה", 3: "קלה"}
+SUG_DEREH:   {1: "עירוני-בצומת", 2: "עירוני-לא בצומת", 3: "בין-עירוני-בצומת"...}
+MEZEG_AVIR:  {1: "בהיר", 2: "גשם קל", 3: "גשם", 4: "ערפל"...}
+MAHOZ:       {1: "ירושלים", 2: "צפון", 3: "חיפה", 4: "מרכז"...}
+  </div>
+
+  <!-- EDA -->
+  <div class="page-break"></div>
+  <h1>3. EDA — ניתוח חקרני (טאב 1 באפליקציה)</h1>
+
+  <p><strong>EDA = Exploratory Data Analysis</strong> — לפני בניית מודל, מסתכלים על הנתונים כדי להבין אותם.</p>
+
+  <h2>תובנות מרכזיות שגילינו</h2>
+
+  <table>
+    <tr><th>קטגוריה</th><th>ממצא</th><th>משמעות</th></tr>
+    <tr><td>⏰ שעות</td><td>שיא ב-7:00-9:00 ו-16:00-18:00</td><td>שעות עומס — יותר תנועה → יותר תאונות</td></tr>
+    <tr><td>📅 ימים</td><td>שישי הכי מסוכן</td><td>יציאה לסוף שבוע, עייפות</td></tr>
+    <tr><td>🌧️ מזג אוויר</td><td>רוב התאונות בימים בהירים</td><td>יותר נסיעות בימים טובים</td></tr>
+    <tr><td>🏙️ מחוז</td><td>מרכז ותל אביב מובילים</td><td>צפיפות תנועה גבוהה</td></tr>
+    <tr><td>🚗 מהירות</td><td>50 קמ"ש — הכי הרבה תאונות</td><td>כבישים עירוניים עמוסים</td></tr>
+    <tr><td>💀 קטלניות</td><td>90+ קמ"ש — הכי קטלני</td><td>מהירות גבוהה = נזק חמור</td></tr>
+  </table>
+
+  <h2>מה רואים באפליקציה (EDA)</h2>
+  <ul style="padding-right:20px;line-height:2.2;">
+    <li><strong>5 KPI Cards</strong> — סה"כ תאונות, קטלניות, קשות, קלות, % חמורות</li>
+    <li><strong>גרף לפי שעה</strong> — מתי הכי מסוכן לנסוע</li>
+    <li><strong>גרף לפי יום</strong> — איזה יום בשבוע הכי מסוכן</li>
+    <li><strong>גרף לפי מחוז</strong> — איפה הכי הרבה תאונות</li>
+    <li><strong>מפה אינטראקטיבית</strong> — פיזור גאוגרפי לפי חומרה</li>
+    <li><strong>סינון</strong> — לפי מחוז, חומרה, מזג אוויר</li>
+  </ul>
+
+  <!-- ממשק מנהל -->
+  <h1>4. ממשק מנהל — דירוג צמתים (טאב 2)</h1>
+
+  <div class="highlight-box">
+    🎯 מטרה: לתת למנהל תשתיות רשימת עדיפויות ברורה — <strong>איפה לטפל קודם ומה לבנות</strong>
+  </div>
+
+  <h2>איך חישבנו ציון סיכון?</h2>
+  <p>קיבצנו את כל התאונות לפי אתר (צומת/קטע כביש) וחישבנו לכל אחד:</p>
+  <div class="code-block">ציון_סיכון = (% קטלניות × 20 + % קשות × 5) × מספר_תאונות
+נרמלנו ל-0-100</div>
+
+  <table>
+    <tr><th>ציון</th><th>צבע</th><th>משמעות</th></tr>
+    <tr><td>60–100</td><td>🔴 אדום</td><td>סיכון גבוה — דחוף לטיפול</td></tr>
+    <tr><td>30–60</td><td>🟡 צהוב</td><td>סיכון בינוני</td></tr>
+    <tr><td>0–30</td><td>🟢 ירוק</td><td>סיכון נמוך</td></tr>
+  </table>
+
+  <h2>מה המנהל רואה</h2>
+  <ul style="padding-right:20px;line-height:2.2;">
+    <li>טבלה מדורגת של כל הצמתים + <strong>עמודת "התערבות מומלצת"</strong></li>
+    <li>מפת חום — אדום=מסוכן, ירוק=בטוח</li>
+    <li>ייצוא ל-CSV לתכנון תקציב</li>
+  </ul>
+
+  <!-- ML -->
+  <div class="page-break"></div>
+  <h1>5. מודל ML — הלב של הפרויקט (טאב 4)</h1>
+
+  <h2>שלב א' — ההחלטות לפני הקוד</h2>
+
+  <table>
+    <tr><th>שאלה</th><th>תשובה</th></tr>
+    <tr>
+      <td><strong>y — מה לחזות?</strong></td>
+      <td>ההתערבות המומלצת: כיכר תנועה / רמזור חכם / מצלמת אכיפה / תאורת לד / פסי האטה / מעבר חצייה</td>
+    </tr>
+    <tr>
+      <td><strong>X — אילו פיצ'רים?</strong></td>
+      <td>פרופיל תאונות הצומת: % קטלניות, % קשות, % לילה, % הולכי רגל, % חזיתיות, מהירות, ועוד</td>
+    </tr>
+    <tr>
+      <td><strong>סוג מודל?</strong></td>
+      <td>Classification (סיווג) — כי התשובה היא קטגוריה, לא מספר</td>
+    </tr>
+    <tr>
+      <td><strong>האלגוריתם?</strong></td>
+      <td>Random Forest — יציב, עמיד לנתונים קטנים, מסביר Feature Importance</td>
+    </tr>
+  </table>
+
+  <h2>שלב ב' — יצירת Labels</h2>
+  <div class="highlight-box">
+    ⚠️ הנתונים לא כוללים "מה קיים בכל צומת" — יצרנו Labels מלוגיקה עסקית מבוססת ספרות בינלאומית
+  </div>
+
+  <table>
+    <tr><th>פרופיל הצומת</th><th>Label שנוצר</th><th>סיבה</th></tr>
+    <tr><td>הרבה תאונות חזיתיות (ראש-בראש)</td><td>כיכר תנועה</td><td>מבטלת התנגשויות ישירות</td></tr>
+    <tr><td>הרבה הולכי רגל + לילה</td><td>מעבר חצייה + תאורה</td><td>נראות וסדר</td></tr>
+    <tr><td>כביש מהיר + הרבה תאונות</td><td>מצלמת אכיפה</td><td>הורדת מהירות ממוצעת</td></tr>
+    <tr><td>הרבה תאונות אחוריות</td><td>פסי האטה</td><td>מאלצים האטה פיזית</td></tr>
+    <tr><td>הרבה תאונות לילה + ערפל</td><td>תאורת לד מוגברת</td><td>שיפור ראות</td></tr>
+    <tr><td>עירוני + עומס + הולכי רגל</td><td>רמזור חכם</td><td>סדר וניהול תנועה</td></tr>
+  </table>
+
+  <h2>שלב ג' — הקוד (train_model.py)</h2>
+  <div class="code-block">
+# חלוקה לאימון ובדיקה
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    test_size=0.2,    # 20% לבדיקה
+    random_state=42,  # שחזוריות
+    stratify=y        # שמירת פרופורציות
+)
+
+# אימון המודל
+model = RandomForestClassifier(n_estimators=200, max_depth=10)
+model.fit(X_train, y_train)
+
+# שמירה לדיסק
+joblib.dump(model, 'models/model.pkl')
+  </div>
+
+  <h2>תוצאות האימון</h2>
+
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="num">81.4%</div>
+      <div class="label">Accuracy</div>
+    </div>
+    <div class="metric-card">
+      <div class="num">81.0%</div>
+      <div class="label">F1-Score</div>
+    </div>
+    <div class="metric-card">
+      <div class="num">83.3%</div>
+      <div class="label">Precision</div>
+    </div>
+    <div class="metric-card">
+      <div class="num">81.4%</div>
+      <div class="label">Recall</div>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    📊 <strong>ה-Baseline (ניחוש אקראי על 6 קטגוריות) = 16.7%</strong><br>
+    המודל שלנו: 81.4% — <strong style="color:#1a237e">פי 4.9 מהניחוש!</strong>
+  </div>
+
+  <h2>Feature Importance — מה המודל למד?</h2>
+
+  <div class="feature-bar">
+    <div class="feature-name">% הולכי רגל</div>
+    <div class="bar-container"><div class="bar-fill" style="width:95%"></div></div>
+    <div class="bar-pct">19.0%</div>
+  </div>
+  <div class="feature-bar">
+    <div class="feature-name">% תאונות חזיתיות</div>
+    <div class="bar-container"><div class="bar-fill" style="width:73%"></div></div>
+    <div class="bar-pct">14.7%</div>
+  </div>
+  <div class="feature-bar">
+    <div class="feature-name">% תאונות לילה</div>
+    <div class="bar-container"><div class="bar-fill" style="width:73%"></div></div>
+    <div class="bar-pct">14.7%</div>
+  </div>
+  <div class="feature-bar">
+    <div class="feature-name">מספר תאונות</div>
+    <div class="bar-container"><div class="bar-fill" style="width:58%"></div></div>
+    <div class="bar-pct">11.6%</div>
+  </div>
+  <div class="feature-bar">
+    <div class="feature-name">% תאונות אחוריות</div>
+    <div class="bar-container"><div class="bar-fill" style="width:55%"></div></div>
+    <div class="bar-pct">11.0%</div>
+  </div>
+  <div class="feature-bar">
+    <div class="feature-name">% קשות</div>
+    <div class="bar-container"><div class="bar-fill" style="width:47%"></div></div>
+    <div class="bar-pct">9.4%</div>
+  </div>
+  <div class="feature-bar">
+    <div class="feature-name">מהירות גבוהה</div>
+    <div class="bar-container"><div class="bar-fill" style="width:45%"></div></div>
+    <div class="bar-pct">9.1%</div>
+  </div>
+
+  <h2>ביצועים לפי קטגוריה</h2>
+  <table>
+    <tr><th>התערבות</th><th>Precision</th><th>Recall</th><th>F1-Score</th></tr>
+    <tr><td>פסי האטה / מוקפצים</td><td>90%</td><td>100%</td><td class="success">95% 🎯</td></tr>
+    <tr><td>רמזור חכם</td><td>100%</td><td>100%</td><td class="success">100% 🎯</td></tr>
+    <tr><td>מצלמת אכיפה</td><td>80%</td><td>100%</td><td class="success">89%</td></tr>
+    <tr><td>תאורת לד מוגברת</td><td>100%</td><td>80%</td><td class="success">89%</td></tr>
+    <tr><td>כיכר תנועה</td><td>67%</td><td>83%</td><td>74%</td></tr>
+    <tr><td>מעבר חצייה + תאורה</td><td>88%</td><td>58%</td><td>70%</td></tr>
+  </table>
+
+  <!-- אפליקציה -->
+  <div class="page-break"></div>
+  <h1>6. האפליקציה — Streamlit</h1>
+
+  <p>Streamlit הופך קוד Python לאפליקציית Web — בלי HTML/CSS.</p>
+
+  <table>
+    <tr><th>טאב</th><th>תוכן</th></tr>
+    <tr><td>📊 ניתוח חקרני (EDA)</td><td>5 KPIs, גרפים אינטראקטיביים, מפת תאונות, סינון</td></tr>
+    <tr><td>🎯 ממשק מנהל</td><td>טבלת עדיפויות, מפת חום, ייצוא CSV</td></tr>
+    <tr><td>🔮 חיזוי לצומת</td><td>לחיצה על מפה → פרופיל → המלצה</td></tr>
+    <tr><td>🤖 חיזוי ML</td><td>מטריקות + Confusion Matrix + חיזוי אינטראקטיבי</td></tr>
+  </table>
+
+  <h2>טעינת המודל באפליקציה</h2>
+  <div class="code-block">
+@st.cache_resource  # נטען פעם אחת בלבד
+def _load_model():
+    clf = joblib.load("models/model.pkl")
+    enc = joblib.load("models/encoders.pkl")
+    return clf, enc
+  </div>
+
+  <!-- ארכיטקטורה -->
+  <h1>7. ארכיטקטורת המערכת</h1>
+  <div class="code-block" style="font-size:11px">
+data/accidents_israel_2021_raw.csv (11,554 שורות)
+        │
+        ▼
+   train_model.py
+   ├── load_and_decode()      ← פענוח קודי CBS
+   ├── build_site_profile()   ← חישוב X: פרופיל לכל צומת
+   ├── generate_labels()      ← יצירת y: התערבות מומלצת
+   ├── RandomForestClassifier.fit()
+   └── joblib.dump() → models/
+                            ├── model.pkl      (המודל)
+                            ├── encoders.pkl   (encoder)
+                            ├── metrics.json   (81.4% accuracy)
+                            └── sites_cache.pkl
+        │
+        ▼
+   eda_app.py (Streamlit — http://localhost:8501)
+   ├── Tab 1: EDA → גרפים + מפה
+   ├── Tab 2: Manager → דירוג + מפת חום
+   ├── Tab 3: Prediction → בחירת צומת → המלצה
+   └── Tab 4: ML → @st.cache_resource + חיזוי
+  </div>
+
+  <!-- שאלות ותשובות -->
+  <h1>8. שאלות צפויות מהמרצה</h1>
+
+  <div class="qa-box">
+    <div class="question">❓ למה Random Forest ולא רגרסיה לוגיסטית?</div>
+    <div class="answer">RF מתמודד טוב יותר עם נתונים לא-לינאריים, לא מחייב נרמול, ומספק Feature Importance מובנה שמסביר את החיזוי. עם 211 דוגמאות — הוא עדיף.</div>
+  </div>
+
+  <div class="qa-box">
+    <div class="question">❓ מאיפה ה-Labels אם אין אותם בנתונים?</div>
+    <div class="answer">יצרנו Labels מלוגיקה עסקית מבוססת ספרות בינלאומית (Elvik & Vaa, 2004). לדוגמה: צומת עם % גבוה של תאונות חזיתיות → כיכר תנועה (שמבטלת ראש-בראש).</div>
+  </div>
+
+  <div class="qa-box">
+    <div class="question">❓ האם 81% Accuracy מספיק טוב?</div>
+    <div class="answer">על 6 קטגוריות עם 211 דוגמאות — כן. Baseline: 16.7%. המודל פי 4.9. פסי האטה ורמזור קיבלו 95% ו-100% F1.</div>
+  </div>
+
+  <div class="qa-box">
+    <div class="question">❓ מה המגבלות של הפרויקט?</div>
+    <div class="answer">1) Labels מלוגיקה ולא מנתונים אמיתיים של מה קיים בצומת. 2) 211 אתרים — מדגם קטן. 3) לא כולל נפח תנועה אמיתי. 4) נתוני 2021 בלבד.</div>
+  </div>
+
+  <div class="qa-box">
+    <div class="question">❓ מה היית עושה עם יותר זמן?</div>
+    <div class="answer">Cross-Validation, נתוני 2022-2024, השוואת XGBoost מול RF, שילוב נתוני נפח תנועה מ-Waze API.</div>
+  </div>
+
+  <!-- הדגמה -->
+  <h1>9. סדר ההדגמה מול המרצה</h1>
+
+  <div style="background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+    <div class="demo-step">
+      <div class="demo-time">0:00</div>
+      <div class="demo-desc">📂 <strong>פתח את האפליקציה</strong> — לחץ פעמיים על <code>run_app.bat</code> → http://localhost:8501</div>
+    </div>
+    <div class="demo-step">
+      <div class="demo-time">0:30</div>
+      <div class="demo-desc">📊 <strong>טאב EDA</strong> — "הנה הנתונים שעבדנו איתם — 11,554 תאונות. כאן רואים פיזור לפי שעה, מחוז, ומפה של כל התאונות."</div>
+    </div>
+    <div class="demo-step">
+      <div class="demo-time">1:30</div>
+      <div class="demo-desc">🎯 <strong>טאב ממשק מנהל</strong> — "ככה הפכנו את הנתונים לרשימת עדיפויות. כל צומת מקבל ציון ועמודת 'מה לבנות'."</div>
+    </div>
+    <div class="demo-step">
+      <div class="demo-time">2:30</div>
+      <div class="demo-desc">🤖 <strong>טאב ML</strong> — הכנס: 20 תאונות, 15% קטלניות, 40% חזיתיות, מהירות גבוהה → לחץ "חזה" → הצג תוצאה</div>
+    </div>
+    <div class="demo-step">
+      <div class="demo-time">3:30</div>
+      <div class="demo-desc">📈 <strong>מטריקות</strong> — "המודל הגיע ל-81.4% Accuracy — פי 4.9 מניחוש אקראי. כאן ה-Confusion Matrix וה-Feature Importance."</div>
+    </div>
+    <div class="demo-step">
+      <div class="demo-time">4:30</div>
+      <div class="demo-desc">❓ <strong>שאלות</strong></div>
+    </div>
+  </div>
+
+  <!-- טכנולוגיות -->
+  <h1>10. טכנולוגיות בשימוש</h1>
+
+  <table>
+    <tr><th>קטגוריה</th><th>טכנולוגיה</th><th>שימוש</th></tr>
+    <tr><td>שפה</td><td>Python 3.9</td><td>כל הפרויקט</td></tr>
+    <tr><td>אפליקציית Web</td><td>Streamlit</td><td>ממשק משתמש</td></tr>
+    <tr><td>ניתוח נתונים</td><td>Pandas, NumPy</td><td>עיבוד וטרנספורמציה</td></tr>
+    <tr><td>ויזואליזציה</td><td>Plotly Express</td><td>גרפים ומפות</td></tr>
+    <tr><td>למידת מכונה</td><td>Scikit-learn</td><td>Random Forest</td></tr>
+    <tr><td>שמירת מודל</td><td>Joblib</td><td>model.pkl</td></tr>
+    <tr><td>קואורדינטות</td><td>PyProj</td><td>ITM → WGS84</td></tr>
+    <tr><td>מיפוי</td><td>Plotly Mapbox</td><td>מפות אינטראקטיביות</td></tr>
+  </table>
+
+</div>
+
+<div class="footer">
+  פרויקט בינה מלאכותית — אוניברסיטת אריאל | 2026
+</div>
+
+</body>
+</html>

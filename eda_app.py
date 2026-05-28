@@ -1,8 +1,13 @@
+import os
+import json
+from typing import Optional
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
+import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder
 
@@ -61,7 +66,7 @@ def _city_map() -> dict:
         return {}
 
 # ── Data loading & decoding ───────────────────────────────────────────────────
-@st.cache_data(show_spinner="טוען נתוני תאונות (למ\"ס PUF 2021)…")
+@st.cache_data(show_spinner='טוען נתוני תאונות (למ"ס PUF 2021)…')
 def load_data() -> pd.DataFrame:
     city_map = _city_map()
 
@@ -135,7 +140,7 @@ INTERVENTIONS = {
         "tags":    {"לילה", "ערפל"},
     },
     "מצלמת אכיפה + מד-מהירות": {
-        "desc":    "אכיפה אוטומטית — מורידה מהירות ממוצעת ב-7 קמ\"ש",
+        "desc":    'אכיפה אוטומטית — מורידה מהירות ממוצעת ב-7 קמ"ש',
         "fatal":   0.25, "serious": 0.18, "cost": "נמוך-בינוני",
         "tags":    {"מהירות_גבוהה", "בין-עירוני"},
     },
@@ -191,64 +196,106 @@ def _rank_interventions(prof: dict, approaches: int, traffic: int, current: str)
         key=lambda x: x[1], reverse=True,
     )
 
-# ── ML model ──────────────────────────────────────────────────────────────────
-_FEAT_COLS = ["סוג_דרך", "מזג_אוויר", "מצב_כביש", "מהירות_מותרת",
-              "חלק_יממה", "מחוז", "סוג_תאונה"]
+# ── ML model paths ─────────────────────────────────────────────────────────────
+_BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+_MODEL_DIR = os.path.join(_BASE_DIR, "models")
 
-@st.cache_resource(show_spinner="מאמן מודל Random Forest…")
+# Feature columns used by train_model.py (per-site profile)
+_FEAT_COLS = [
+    "תאונות", "fatal_pct", "serious_pct", "night_pct", "rain_pct",
+    "pedestrian_pct", "frontal_pct", "rear_pct", "rollover_pct", "high_speed",
+]
+
+@st.cache_resource(show_spinner="טוען מודל התערבות…")
+def _load_model():
+    """Load trained intervention model from disk (produced by train_model.py)."""
+    model_path = os.path.join(_MODEL_DIR, "model.pkl")
+    enc_path   = os.path.join(_MODEL_DIR, "encoders.pkl")
+    if os.path.exists(model_path) and os.path.exists(enc_path):
+        clf = joblib.load(model_path)
+        enc = joblib.load(enc_path)
+        importance = pd.Series(
+            clf.feature_importances_, index=_FEAT_COLS
+        ).sort_values(ascending=False)
+        return clf, enc, importance
+    return None, None, None
+
+@st.cache_data(show_spinner=False)
+def _load_metrics() -> Optional[dict]:
+    """Load saved metrics.json produced by train_model.py."""
+    p = os.path.join(_MODEL_DIR, "metrics.json")
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+@st.cache_data(show_spinner=False)
+def _load_sites_cache() -> Optional[pd.DataFrame]:
+    """Load pre-computed per-site profile from train_model.py."""
+    p = os.path.join(_MODEL_DIR, "sites_cache.pkl")
+    if os.path.exists(p):
+        return joblib.load(p)
+    return None
+
+# keep alias for manager tab
 def _train_model():
-    df = load_data()
-    sub = df.dropna(subset=_FEAT_COLS + ["חומרת_תאונה"]).copy()
-
-    encs = {c: LabelEncoder() for c in _FEAT_COLS}
-    X = np.column_stack([encs[c].fit_transform(sub[c].astype(str)) for c in _FEAT_COLS])
-    y = sub["חומרת_תאונה"].map({"קלה": 0, "קשה": 1, "קטלנית": 2}).values
-
-    clf = RandomForestClassifier(n_estimators=150, random_state=42, n_jobs=-1)
-    clf.fit(X, y)
-
-    importance = pd.Series(clf.feature_importances_, index=_FEAT_COLS).sort_values(ascending=False)
-    return clf, encs, importance
+    return _load_model()
 
 @st.cache_data(show_spinner="מחשב ציוני סיכון לאתרי תשתית…")
 def _score_sites(_v: str) -> pd.DataFrame:
-    df  = load_data()
-    clf, encs, _ = _train_model()
+    """Score all sites using rule-based engine."""
+    df = load_data()
+    records = []
+    for site, grp in df.groupby("אתר"):
+        n = max(len(grp), 1)
+        spd_mode  = grp["מהירות_מותרת"].mode()
+        spd_val   = spd_mode.iloc[0] if len(spd_mode) else "50"
+        road_mode = grp["סוג_דרך"].mode()
+        road_type = road_mode.iloc[0] if len(road_mode) else ""
 
-    sub = df.dropna(subset=_FEAT_COLS).copy()
-    X_parts = []
-    for c in _FEAT_COLS:
-        col_str = sub[c].fillna("לא ידוע").astype(str)
-        col_str[~col_str.isin(encs[c].classes_)] = encs[c].classes_[0]
-        X_parts.append(encs[c].transform(col_str))
-    X = np.column_stack(X_parts)
+        prof = {
+            "אתר":           site,
+            "תאונות":        n,
+            "fatal_pct":     (grp["חומרת_תאונה"] == "קטלנית").sum() / n,
+            "serious_pct":   (grp["חומרת_תאונה"] == "קשה").sum() / n,
+            "night_pct":     (grp["חלק_יממה"] == "לילה").sum() / n,
+            "rain_pct":      grp["מזג_אוויר"].isin(["גשם", "גשם קל"]).sum() / n,
+            "pedestrian_pct":(grp["סוג_תאונה"] == "הולך רגל").sum() / n,
+            "frontal_pct":   (grp["סוג_תאונה"] == "חזיתית").sum() / n,
+            "rear_pct":      (grp["סוג_תאונה"] == "אחורית").sum() / n,
+            "rollover_pct":  (grp["סוג_תאונה"] == "התהפכות").sum() / n,
+            "high_speed":    1 if str(spd_val) in {"70","80","90","100","110"} else 0,
+            "מחוז":          grp["מחוז"].mode().iloc[0] if grp["מחוז"].notna().any() else "—",
+            "סוג_דרך":       road_type,
+            "lat":           grp["קו_רוחב"].mean(),
+            "lon":           grp["קו_אורך"].mean(),
+        }
+        # rule-based scores
+        scores = {}
+        for name, info in INTERVENTIONS.items():
+            s = (
+                prof["fatal_pct"]   * info["fatal"]   +
+                prof["serious_pct"] * info["serious"]
+            ) * n * 10
+            if prof["pedestrian_pct"] > 0.12 and "הולך רגל"    in info["tags"]: s += 25
+            if prof["frontal_pct"]    > 0.18 and "חזיתית"      in info["tags"]: s += 25
+            if prof["night_pct"]      > 0.35 and "לילה"        in info["tags"]: s += 20
+            if prof["high_speed"]            and "מהירות_גבוהה" in info["tags"]: s += 20
+            if prof["rear_pct"]       > 0.20 and "אחורית"      in info["tags"]: s += 15
+            scores[name] = max(0.0, s)
 
-    proba = clf.predict_proba(X)
-    weights = np.array([0, 5, 20])
-    sub = sub.copy()
-    sub["ציון_גלמי"] = (proba * weights).sum(axis=1)
+        raw_score = (prof["fatal_pct"] * 20 + prof["serious_pct"] * 5) * n
+        prof["ציון_סיכון_גלמי"]    = raw_score
+        prof["התערבות_מומלצת"] = max(scores, key=scores.get)
+        records.append(prof)
 
-    agg = (
-        sub.groupby("אתר")
-        .agg(
-            תאונות        = ("אתר",         "count"),
-            ציון_סיכון_גלמי = ("ציון_גלמי", "mean"),
-            lat           = ("קו_רוחב",     "mean"),
-            lon           = ("קו_אורך",     "mean"),
-            מחוז          = ("מחוז",        lambda x: x.mode().iloc[0] if len(x) else "—"),
-            סוג_דרך       = ("סוג_דרך",     lambda x: x.mode().iloc[0] if len(x) else "—"),
-        )
-        .reset_index()
-    )
-
+    agg = pd.DataFrame(records)
     mx = agg["ציון_סיכון_גלמי"].max()
-    agg["ציון_סיכון"] = (agg["ציון_סיכון_גלמי"] / mx * 100).round(1)
+    agg["ציון_סיכון"] = (agg["ציון_סיכון_גלמי"] / max(mx, 1) * 100).round(1)
     agg["דירוג"] = agg["ציון_סיכון"].apply(
         lambda s: "🔴 גבוה" if s >= 60 else ("🟡 בינוני" if s >= 30 else "🟢 נמוך")
     )
-    agg = agg.sort_values("ציון_סיכון", ascending=False).reset_index(drop=True)
-    agg.index += 1
-    return agg
+    return agg.sort_values("ציון_סיכון", ascending=False).reset_index(drop=True)
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 df = load_data()
@@ -272,21 +319,22 @@ if wthr_sel:
     flt = flt[flt["מזג_אוויר"].isin(wthr_sel)]
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_eda, tab_mgr, tab_pred = st.tabs([
+tab_eda, tab_mgr, tab_pred, tab_ml = st.tabs([
     "📊 ניתוח חקרני (EDA)",
     "🎯 ממשק מנהל — מוקדי סיכון",
     "🔮 חיזוי פתרון לצומת",
+    "🤖 חיזוי התערבות (ML)",
 ])
 
 # ══════════════════════════════ EDA TAB ═══════════════════════════════════════
 with tab_eda:
     st.title("🔍 ניתוח חקרני — תאונות דרכים ישראל 2021")
-    st.caption(f"מציג {len(flt):,} תאונות מתוך {len(df):,} | מקור: למ\"ס PUF 2021")
+    st.caption(f'מציג {len(flt):,} תאונות מתוך {len(df):,} | מקור: למ"ס PUF 2021')
     st.markdown("---")
 
     # KPIs
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("סה\"כ תאונות",       f"{len(flt):,}")
+    k1.metric('סה"כ תאונות',       f"{len(flt):,}")
     k2.metric("קטלניות",            f"{(flt['חומרת_תאונה'] == 'קטלנית').sum():,}")
     k3.metric("קשות",               f"{(flt['חומרת_תאונה'] == 'קשה').sum():,}")
     k4.metric("קלות",               f"{(flt['חומרת_תאונה'] == 'קלה').sum():,}")
@@ -385,7 +433,7 @@ with tab_eda:
     with d2:
         spd = flt.groupby(["מהירות_מותרת", "חומרת_תאונה"], observed=True).size().reset_index(name="כמות")
         fig = px.bar(spd, x="מהירות_מותרת", y="כמות", color="חומרת_תאונה",
-                     title="חומרה לפי מהירות מותרת (קמ\"ש)",
+                     title='חומרה לפי מהירות מותרת (קמ"ש)',
                      color_discrete_map={"קלה": "#2ecc71", "קשה": "#e67e22", "קטלנית": "#e74c3c"},
                      barmode="stack",
                      category_orders={"מהירות_מותרת": ["30","40","50","60","70","80","90","100","110"]})
@@ -436,17 +484,15 @@ with tab_eda:
 # ══════════════════════════════ MANAGER TAB ═══════════════════════════════════
 with tab_mgr:
     st.title("🎯 ממשק מנהל — דירוג מוקדי סיכון בתשתיות תחבורה")
-    st.caption("מודל Random Forest | נתוני למ\"ס PUF 2021 — 11,554 תאונות אמיתיות")
+    st.caption('מודל Rule-Based | נתוני למ"ס PUF 2021 — 11,554 תאונות אמיתיות')
     st.markdown("---")
 
-    clf, encs, importance = _train_model()
-    sites = _score_sites("v1")
-
+    sites = _score_sites("v2")
     sites_flt = sites[sites["מחוז"] == dist_sel] if dist_sel != "הכל" else sites
 
     # KPIs
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("סה\"כ אתרי תשתית",   f"{len(sites_flt):,}")
+    m1.metric('סה"כ אתרי תשתית',   f"{len(sites_flt):,}")
     m2.metric("🔴 סיכון גבוה",       f"{(sites_flt['דירוג'] == '🔴 גבוה').sum():,}")
     m3.metric("🟡 סיכון בינוני",     f"{(sites_flt['דירוג'] == '🟡 בינוני').sum():,}")
     m4.metric("🟢 סיכון נמוך",       f"{(sites_flt['דירוג'] == '🟢 נמוך').sum():,}")
@@ -455,7 +501,6 @@ with tab_mgr:
 
     # Ranked table
     st.subheader("📋 טבלת עדיפויות לטיפול תשתיתי")
-
     risk_filter = st.multiselect(
         "סנן לפי רמת סיכון:",
         ["🔴 גבוה", "🟡 בינוני", "🟢 נמוך"],
@@ -463,8 +508,8 @@ with tab_mgr:
     )
     tbl = sites_flt[sites_flt["דירוג"].isin(risk_filter)].copy()
 
-    show = tbl[["אתר", "מחוז", "סוג_דרך", "תאונות", "ציון_סיכון", "דירוג"]].copy()
-    show.columns = ["אתר תשתית", "מחוז", "סוג דרך", "מס' תאונות", "ציון סיכון (0–100)", "דירוג"]
+    show = tbl[["אתר", "מחוז", "סוג_דרך", "תאונות", "ציון_סיכון", "דירוג", "התערבות_מומלצת"]].copy()
+    show.columns = ["אתר תשתית", "מחוז", "סוג דרך", "מס' תאונות", "ציון סיכון (0–100)", "דירוג", "התערבות מומלצת"]
 
     st.dataframe(
         show,
@@ -482,20 +527,6 @@ with tab_mgr:
 
     st.markdown("---")
 
-    # Feature importance
-    st.subheader("🔍 גורמי סיכון מרכזיים — Feature Importance")
-    imp_df = importance.reset_index()
-    imp_df.columns = ["גורם", "חשיבות"]
-    fig_imp = px.bar(
-        imp_df, x="חשיבות", y="גורם", orientation="h",
-        color="חשיבות", color_continuous_scale="Reds",
-        title="אילו גורמים מסבירים את חומרת התאונה?",
-    )
-    fig_imp.update_layout(yaxis=dict(autorange="reversed"), coloraxis_showscale=False)
-    st.plotly_chart(fig_imp, use_container_width=True)
-
-    st.markdown("---")
-
     # Risk map
     st.subheader("🗺️ מפת חום — ריכוזי סיכון")
     map_sites = tbl.dropna(subset=["lat", "lon"])
@@ -508,7 +539,7 @@ with tab_mgr:
             size_max=28,
             hover_name="אתר",
             hover_data={"תאונות": True, "ציון_סיכון": True, "דירוג": True,
-                        "lat": False, "lon": False},
+                        "התערבות_מומלצת": True, "lat": False, "lon": False},
             color_continuous_scale="RdYlGn_r",
             zoom=7, center={"lat": 31.8, "lon": 35.0},
             map_style="carto-positron",
@@ -529,7 +560,7 @@ with tab_pred:
     # ── Interactive map ──
     st.subheader("1️⃣  לחץ על צומת במפה")
 
-    sites_for_map = _score_sites("v1").dropna(subset=["lat", "lon"])
+    sites_for_map = _score_sites("v2").dropna(subset=["lat", "lon"])
 
     fig_pred_map = px.scatter_map(
         sites_for_map,
@@ -556,7 +587,7 @@ with tab_pred:
         key="pred_map",
     )
 
-    # Resolve selected site: map click → session state → selectbox
+    # Resolve selected site
     if "pred_site" not in st.session_state:
         st.session_state["pred_site"] = sorted(df["אתר"].dropna().unique().tolist())[0]
 
@@ -585,7 +616,7 @@ with tab_pred:
     st.subheader("2️⃣  פרופיל התאונות באתר")
 
     p1, p2, p3, p4 = st.columns(4)
-    p1.metric("סה\"כ תאונות",        prof["total"])
+    p1.metric('סה"כ תאונות',        prof["total"])
     p2.metric("% קשות + קטלניות",    f"{(prof['fatal_pct']+prof['serious_pct'])*100:.1f}%")
     p3.metric("% תאונות לילה",       f"{prof['night_pct']*100:.1f}%")
     p4.metric("שעת שיא",             f"{prof['peak_hour']:02d}:00")
@@ -611,7 +642,7 @@ with tab_pred:
 
     st.markdown("---")
 
-    # ── Step 3: site characteristics (user input) ──
+    # ── Step 3: site characteristics ──
     st.subheader("3️⃣  מאפייני הצומת")
 
     ch1, ch2, ch3 = st.columns(3)
@@ -636,7 +667,6 @@ with tab_pred:
 
     ranked = _rank_interventions(prof, approaches, traffic, current)
 
-    # Top recommendation
     top_name, top_score, top_info = ranked[0]
     st.success(
         f"**המלצה ראשית: {top_name}**  \n"
@@ -646,7 +676,6 @@ with tab_pred:
         f"עלות יחסית: **{top_info['cost']}**"
     )
 
-    # All ranked alternatives
     st.markdown("#### השוואת כל הפתרונות")
     rank_df = pd.DataFrame([
         {
@@ -671,7 +700,6 @@ with tab_pred:
         },
     )
 
-    # Expected impact chart
     fig_imp = px.bar(
         rank_df,
         x="פתרון", y="ציון התאמה (0–100)",
@@ -686,4 +714,182 @@ with tab_pred:
     st.caption(
         "⚠️ ההמלצות מבוססות על פרופיל התאונות ההיסטורי ונתוני ספרות בינלאומית. "
         "לא כוללות נתוני נפח תנועה אמיתיים או מצב תשתית פיזית."
+    )
+
+# ══════════════════════════════ ML TAB ════════════════════════════════════════
+with tab_ml:
+    st.title("🤖 חיזוי התערבות מומלצת — מודל ML")
+    st.caption(
+        "**y (מה אנחנו מחזים):** ההתערבות המומלצת לצומת — כיכר / רמזור / מצלמה וכו'  |  "
+        "**X (פיצ'רים):** פרופיל תאונות האתר  |  "
+        "**סוג מודל:** Classification (Random Forest)"
+    )
+    st.markdown("---")
+
+    clf_ml, enc_ml, importance_ml = _load_model()
+    metrics_data = _load_metrics()
+
+    # ── Model not trained yet ──
+    if clf_ml is None:
+        st.warning(
+            "⚠️ מודל לא נמצא. יש להריץ קודם:\n"
+            "```bash\npython train_model.py\n```"
+        )
+    else:
+        # ── Metrics ──
+        st.subheader("📈 ביצועי המודל")
+
+        if metrics_data:
+            mk1, mk2, mk3, mk4 = st.columns(4)
+            mk1.metric("Accuracy",  f"{metrics_data['accuracy']*100:.1f}%")
+            mk2.metric("F1-Score",  f"{metrics_data['f1_score']*100:.1f}%")
+            mk3.metric("Precision", f"{metrics_data['precision']*100:.1f}%")
+            mk4.metric("Recall",    f"{metrics_data['recall']*100:.1f}%")
+
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                st.markdown("#### 📊 Confusion Matrix")
+                cm     = np.array(metrics_data["confusion_matrix"])
+                labels = metrics_data["labels"]
+                fig_cm = px.imshow(
+                    cm, x=labels, y=labels,
+                    text_auto=True,
+                    color_continuous_scale="Blues",
+                    labels={"x": "חיזוי", "y": "אמיתי", "color": "כמות"},
+                    title="מטריצת בלבול",
+                )
+                fig_cm.update_layout(height=380)
+                st.plotly_chart(fig_cm, use_container_width=True)
+
+            with mc2:
+                st.markdown("#### 🔍 Feature Importance")
+                imp_data = metrics_data["feature_importance"]
+                imp_df = pd.DataFrame(
+                    sorted(imp_data.items(), key=lambda x: x[1], reverse=True),
+                    columns=["פיצ'ר", "חשיבות"]
+                )
+                fig_fi = px.bar(
+                    imp_df, x="חשיבות", y="פיצ'ר", orientation="h",
+                    color="חשיבות", color_continuous_scale="Reds",
+                    title="אילו פיצ'רים הכי חשובים?",
+                )
+                fig_fi.update_layout(
+                    yaxis=dict(autorange="reversed"),
+                    coloraxis_showscale=False, height=380,
+                )
+                st.plotly_chart(fig_fi, use_container_width=True)
+
+            with st.expander("📋 פרטי האימון"):
+                st.markdown(f"""
+| פרמטר | ערך |
+|-------|-----|
+| מודל | Random Forest |
+| n_estimators | {metrics_data.get('n_estimators', 200)} |
+| Train size | {metrics_data.get('train_size', '—'):,} |
+| Test size | {metrics_data.get('test_size', '—'):,} |
+| Test ratio | {metrics_data.get('test_ratio', 0.2)} |
+| random_state | {metrics_data.get('random_state', 42)} |
+                """)
+        else:
+            st.info("טרם נמצאו מטריקות. הרץ `python train_model.py` לקבלת מטריקות.")
+
+        st.markdown("---")
+
+        # ── Interactive prediction ──
+        st.subheader("🔮 חיזוי אינטראקטיבי — מה צריך להיות בצומת?")
+        st.info(
+            "הכנס את פרופיל הצומת — המודל יחזה איזו התערבות מומלצת "
+            "(כיכר תנועה / רמזור חכם / מצלמת אכיפה וכו')"
+        )
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            inp_accidents   = st.number_input("מספר תאונות היסטוריות:", min_value=1, max_value=500, value=15)
+            inp_fatal_pct   = st.slider("% תאונות קטלניות:",   0, 100, 10) / 100
+            inp_serious_pct = st.slider("% תאונות קשות:",      0, 100, 25) / 100
+            inp_night_pct   = st.slider("% תאונות לילה:",      0, 100, 30) / 100
+        with col2:
+            inp_rain_pct    = st.slider("% תאונות בגשם:",      0, 100, 15) / 100
+            inp_ped_pct     = st.slider("% הולכי רגל:",        0, 100, 10) / 100
+            inp_frontal_pct = st.slider("% תאונות חזיתיות:",   0, 100, 20) / 100
+        with col3:
+            inp_rear_pct    = st.slider("% תאונות אחוריות:",   0, 100, 15) / 100
+            inp_rollover    = st.slider("% התהפכות:",           0, 100,  5) / 100
+            inp_high_speed  = st.checkbox("מהירות מותרת ≥ 70 קמ\"ש", value=False)
+
+        if st.button("🚀 חזה התערבות מומלצת", type="primary", use_container_width=True):
+            X_input = np.array([[
+                inp_accidents, inp_fatal_pct, inp_serious_pct,
+                inp_night_pct, inp_rain_pct, inp_ped_pct,
+                inp_frontal_pct, inp_rear_pct, inp_rollover,
+                1 if inp_high_speed else 0,
+            ]])
+
+            prediction   = clf_ml.predict(X_input)[0]
+            probabilities = clf_ml.predict_proba(X_input)[0]
+            class_labels  = list(clf_ml.classes_)
+
+            st.markdown("---")
+            st.subheader("📊 תוצאת החיזוי")
+
+            int_info = INTERVENTIONS.get(prediction, {})
+            st.success(
+                f"**🎯 התערבות מומלצת: {prediction}**  \n"
+                f"{int_info.get('desc', '')}  \n"
+                f"הפחתת קטלניות צפויה: **{int(int_info.get('fatal', 0)*100)}%** | "
+                f"עלות: **{int_info.get('cost', '—')}**"
+            )
+
+            r1, r2 = st.columns(2)
+            with r1:
+                prob_df = pd.DataFrame({
+                    "התערבות": class_labels,
+                    "הסתברות": probabilities,
+                    "אחוז":    [f"{p*100:.1f}%" for p in probabilities],
+                })
+                fig_prob = px.bar(
+                    prob_df.sort_values("הסתברות", ascending=False),
+                    x="התערבות", y="הסתברות",
+                    color="הסתברות",
+                    color_continuous_scale="Blues",
+                    title="הסתברות לכל התערבות",
+                    text="אחוז",
+                )
+                fig_prob.update_layout(
+                    showlegend=False,
+                    yaxis_tickformat=".0%",
+                    coloraxis_showscale=False,
+                    xaxis_tickangle=-20,
+                )
+                fig_prob.update_traces(textposition="outside")
+                st.plotly_chart(fig_prob, use_container_width=True)
+
+            with r2:
+                max_prob = max(probabilities)
+                fig_gauge = go.Figure(go.Indicator(
+                    mode="gauge+number",
+                    value=max_prob * 100,
+                    title={"text": "ביטחון המודל"},
+                    number={"suffix": "%"},
+                    gauge={
+                        "axis": {"range": [0, 100]},
+                        "bar":  {"color": "#3498db"},
+                        "steps": [
+                            {"range": [0,  40], "color": "#ffeaa7"},
+                            {"range": [40, 70], "color": "#dfe6e9"},
+                            {"range": [70,100], "color": "#b2bec3"},
+                        ],
+                        "threshold": {
+                            "line": {"color": "green", "width": 4},
+                            "thickness": 0.75, "value": 70,
+                        },
+                    },
+                ))
+                fig_gauge.update_layout(height=300)
+                st.plotly_chart(fig_gauge, use_container_width=True)
+
+    st.markdown("---")
+    st.caption(
+        '⚠️ המודל מאומן על נתוני למ"ס PUF 2021. '
+        "Labels נוצרו מלוגיקה עסקית מבוססת ספרות בינלאומית."
     )

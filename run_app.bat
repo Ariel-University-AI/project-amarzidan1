@@ -1,9 +1,6 @@
-
 @echo off
+chcp 65001 >nul
 cd /d "%~dp0"
-echo Installing dependencies...
-pip install streamlit pandas plotly --quiet
-echo.
-echo Opening EDA App...
-streamlit run eda_app.py
+echo Starting Streamlit...
+python -m streamlit run eda_app.py --server.port 8501
 pause

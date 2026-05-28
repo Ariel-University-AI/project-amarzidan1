@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/amarz/Desktop/**)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\amarz\\\\Desktop\" -Force | ForEach-Object { $_.FullName })",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\amarz\\\\Desktop\\\\amar1\" -Force | ForEach-Object { $_.FullName })",
+      "PowerShell($item = Get-Item \"C:\\\\Users\\\\amarz\\\\Desktop\\\\amar1\"; Write-Output \"IsDirectory: $\\($item.PSIsContainer\\)\"; Write-Output \"Type: $\\($item.GetType\\(\\).Name\\)\")",
+      "PowerShell($item = Get-Item \"C:\\\\Users\\\\amarz\\\\Desktop\\\\amar1\"; Write-Output \"Size: $\\($item.Length\\) bytes\"; Write-Output \"Extension: '$\\($item.Extension\\)'\")",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\amarz\\\\Desktop\" -Directory -Force | ForEach-Object { Write-Output \"$\\($_.Name\\) | $\\($_.FullName\\)\" })",
+      "PowerShell(Get-Process -Name \"streamlit\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Start-Process \"C:\\\\Users\\\\amarz\\\\Desktop\\\\amar1\\\\README_DATA.html\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\amarz\\Desktop\\amar1"
+    ]
+  }
+}
