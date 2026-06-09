@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Arial',sans-serif; direction:rtl; background:#fff; color:#1a1a2e; font-size:13px; line-height:1.7; }
+  .cover { background:linear-gradient(135deg,#1a237e,#0d47a1); color:white; padding:50px 60px; text-align:center; page-break-after:always; min-height:100vh; display:flex; flex-direction:column; justify-content:center; }
+  .cover h1 { font-size:30px; font-weight:800; margin-bottom:12px; }
+  .cover h2 { font-size:18px; font-weight:300; opacity:0.9; margin-bottom:30px; }
+  .badge { display:inline-block; background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.5); border-radius:50px; padding:6px 20px; font-size:12px; margin:4px; }
+  .stats { display:flex; justify-content:center; gap:30px; margin-top:40px; }
+  .stat { background:rgba(255,255,255,0.15); border-radius:10px; padding:16px 24px; text-align:center; }
+  .stat-num { font-size:28px; font-weight:800; }
+  .stat-lbl { font-size:11px; opacity:0.8; }
+  .page { padding:40px 60px; max-width:900px; margin:0 auto; page-break-inside:avoid; }
+  h1.section { font-size:22px; font-weight:800; color:#1a237e; border-bottom:3px solid #1a237e; padding-bottom:8px; margin:28px 0 16px; }
+  h2.sub { font-size:16px; font-weight:700; color:#0d47a1; margin:18px 0 8px; }
+  p { margin-bottom:10px; }
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:12px; }
+  th { background:#1a237e; color:white; padding:8px 12px; text-align:right; }
+  td { padding:7px 12px; border-bottom:1px solid #e8ecf0; }
+  tr:nth-child(even) td { background:#f8f9ff; }
+  .highlight { background:linear-gradient(135deg,#e3f2fd,#bbdefb); border-right:4px solid #1a237e; border-radius:6px; padding:12px 16px; margin:12px 0; font-size:13px; font-weight:600; }
+  .metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:14px 0; }
+  .metric { background:white; border:1px solid #e0e0e0; border-radius:8px; padding:14px; text-align:center; }
+  .metric-val { font-size:22px; font-weight:800; color:#1a237e; }
+  .metric-lbl { font-size:11px; color:#666; margin-top:4px; }
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .box { background:#f8f9ff; border-radius:8px; padding:14px 18px; }
+  .box h3 { font-size:14px; font-weight:700; margin-bottom:8px; color:#1a237e; }
+  ul { padding-right:20px; margin:8px 0; }
+  li { margin-bottom:4px; }
+  .tag { display:inline-block; background:#e3f2fd; color:#1a237e; border-radius:4px; padding:2px 8px; font-size:11px; margin:2px; }
+  @media print { .page { padding:20px 30px; } }
+</style>
+</head>
+<body>
+
+<!-- שער -->
+<div class="cover">
+  <h1>מערכת ניתוח וחיזוי צמתים — ישראל 2021</h1>
+  <h2>תמיכת החלטות למשרד התחבורה לשיקום תשתיות</h2>
+  <div>
+    <span class="badge">גאודזיה מתמטית — מדע הנתונים</span>
+    <span class="badge">444210</span>
+    <span class="badge">אוניברסיטת אריאל</span>
+  </div>
+  <div>
+    <span class="badge">Demo Day · יוני 2026</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="stat-num">11,554</div><div class="stat-lbl">תאונות אמיתיות</div></div>
+    <div class="stat"><div class="stat-num">2,992</div><div class="stat-lbl">צמתים מנותחים</div></div>
+    <div class="stat"><div class="stat-num">79.1%</div><div class="stat-lbl">Accuracy מודל ML</div></div>
+    <div class="stat"><div class="stat-num">9</div><div class="stat-lbl">חלופות הנדסיות</div></div>
+  </div>
+</div>
+
+<!-- עמוד 1: שאלת המחקר + נתונים -->
+<div class="page">
+  <h1 class="section">1. שאלת המחקר</h1>
+  <div class="highlight">
+    כיצד ניתן לנתח צמתים בישראל לפי נתוני תאונות ועומסי תנועה, ולהמליץ על פתרונות שדרוג מתאימים — תוך חיזוי השפעת כל פתרון?
+  </div>
+  <p>הפרויקט פותח מערכת תמיכה בהחלטות למשרד התחבורה, המאפשרת:</p>
+  <ul>
+    <li><strong>זיהוי</strong> צמתים בעייתיים לפי ציון סיכון משולב (תאונות 65% + עומסי תנועה 35%)</li>
+    <li><strong>ניתוח</strong> הנדסי מלא לפי HCM 6th Ed., AASHTO, FHWA, NCHRP</li>
+    <li><strong>חיזוי</strong> השפעת פתרון שדרוג על תאונות, עומסים ועלויות</li>
+  </ul>
+
+  <h1 class="section">2. נתונים</h1>
+  <div class="two-col">
+    <div class="box">
+      <h3>📊 מקורות נתונים</h3>
+      <table>
+        <tr><th>מקור</th><th>שימוש</th></tr>
+        <tr><td>למ"ס PUF 2021</td><td>11,554 תאונות אמיתיות</td></tr>
+        <tr><td>נתיבי ישראל</td><td>עלויות ביצוע</td></tr>
+        <tr><td>מכרז משטרה 2025</td><td>עלות מצלמת אכיפה</td></tr>
+        <tr><td>עיריית ירושלים 2023</td><td>עלות כיכר תנועה</td></tr>
+        <tr><td>OpenStreetMap</td><td>זיהוי תשתית קיימת</td></tr>
+        <tr><td>משרד התחבורה</td><td>עלות תאונה ₪3.5M</td></tr>
+      </table>
+    </div>
+    <div class="box">
+      <h3>🔧 Feature Engineering</h3>
+      <ul>
+        <li>זיהוי צומת ייחודי לפי <code>ZOMET_IRONI</code></li>
+        <li>המרת קואורדינטות: ITM → WGS84 (pyproj)</li>
+        <li>מדד עומס: rear_pct×0.6 + peak_pct×0.4</li>
+        <li>הערכת LOS מנתוני CBS לפי HCM</li>
+        <li>הערכת AADT מ-NCHRP Report 17-45</li>
+        <li>11 פיצ'רים כולל peak_pct (חדש)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h1 class="section">3. שלוש רמות הניתוח</h1>
+  <table>
+    <tr><th>רמה</th><th>שאלה</th><th>יישום</th></tr>
+    <tr><td><strong>תיאורי</strong></td><td>"מה קורה?"</td><td>KPIs, מפה, EDA, גרפי עומסים</td></tr>
+    <tr><td><strong>חיזוי</strong></td><td>"מה יקרה?"</td><td>Random Forest ML + חיזוי HCM לאחר שדרוג</td></tr>
+    <tr><td><strong>מנחה</strong></td><td>"מה לעשות?"</td><td>9 חלופות מדורגות + טבלת השוואה + ROI</td></tr>
+  </table>
+</div>
+
+<!-- עמוד 2: מודל + תוצאות -->
+<div class="page">
+  <h1 class="section">4. מודל ML</h1>
+  <div class="two-col">
+    <div class="box">
+      <h3>🤖 Random Forest Classifier</h3>
+      <table>
+        <tr><th>פרמטר</th><th>ערך</th></tr>
+        <tr><td>n_estimators</td><td>200</td></tr>
+        <tr><td>max_depth</td><td>10</td></tr>
+        <tr><td>train_test_split</td><td>80/20, random_state=42</td></tr>
+        <tr><td>Target (y)</td><td>התערבות מומלצת (7 סוגים)</td></tr>
+        <tr><td>Feature חדש</td><td>peak_pct — מדד עומס</td></tr>
+        <tr><td>אתרים</td><td>211 (≥3 תאונות)</td></tr>
+      </table>
+    </div>
+    <div>
+      <div class="metric-grid">
+        <div class="metric"><div class="metric-val">79.1%</div><div class="metric-lbl">Accuracy</div></div>
+        <div class="metric"><div class="metric-val">74.5%</div><div class="metric-lbl">F1-Score</div></div>
+        <div class="metric"><div class="metric-val">76.2%</div><div class="metric-lbl">Precision</div></div>
+        <div class="metric"><div class="metric-val">79.1%</div><div class="metric-lbl">Recall</div></div>
+      </div>
+      <div class="box" style="margin-top:10px">
+        <h3>🔑 Top Features (SHAP)</h3>
+        <ul>
+          <li><strong>rear_pct</strong> (41.6%) — מדד פקק</li>
+          <li><strong>pedestrian_pct</strong> (10.6%) — הולכי רגל</li>
+          <li><strong>תאונות</strong> (10.4%) — נפח כולל</li>
+          <li><strong>serious_pct</strong> (7.9%) — חומרה</li>
+          <li><strong>peak_pct</strong> (2.4%) — שעות עומס</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <h1 class="section">5. מנוע ניתוח הנדסי</h1>
+  <div class="highlight">
+    9 חלופות מדורגות לפי 4 קריטריונים משוקללים — מבוסס HCM, AASHTO, FHWA, NCHRP
+  </div>
+  <table>
+    <tr><th>חלופה</th><th>הפחתת קטלניות</th><th>עלות ממוצעת</th><th>מקור</th></tr>
+    <tr><td>כיכר חד נתיבית</td><td>90%</td><td>₪500,000</td><td>FHWA Roundabout Guide (2010)</td></tr>
+    <tr><td>כיכר טורבו</td><td>85%</td><td>₪2,500,000</td><td>SWOV (2010), Fortuijn</td></tr>
+    <tr><td>כיכר דו נתיבית</td><td>78%</td><td>₪1,200,000</td><td>NCHRP Report 572</td></tr>
+    <tr><td>מחלף מלא</td><td>70%</td><td>₪100,000,000</td><td>AASHTO Green Book (2018)</td></tr>
+    <tr><td>מחלף חלקי</td><td>50%</td><td>₪35,000,000</td><td>AASHTO Green Book (2018)</td></tr>
+    <tr><td>צומת מרומזר</td><td>30%</td><td>₪7,000,000</td><td>HCM 6th Edition</td></tr>
+    <tr><td>צומת חכם אדפטיבי</td><td>20%</td><td>₪7,000,000</td><td>FHWA ATMS (2022)</td></tr>
+    <tr><td>הוספת נתיבי פנייה</td><td>25%</td><td>₪700,000</td><td>NCHRP Report 617</td></tr>
+    <tr><td>שיפור גיאומטרי</td><td>15%</td><td>₪500,000</td><td>NCHRP Report 617</td></tr>
+  </table>
+
+  <h1 class="section">6. מגבלות הפרויקט</h1>
+  <div class="two-col">
+    <div class="box">
+      <h3>⚠️ מגבלות נתונים</h3>
+      <ul>
+        <li>נתוני 2021 בלבד — לא רב-שנתי</li>
+        <li>AADT מוערך (לא מנתוני ספירה אמיתיים)</li>
+        <li>LOS/השהייה מוערכים מ-CBS, לא מדידה</li>
+        <li>זיהוי תשתית מ-OSM — לא תמיד שלם</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>📈 הרחבות עתידיות</h3>
+      <ul>
+        <li>חיבור לספירות תנועה מ-data.gov.il</li>
+        <li>נתוני LOS אמיתיים (HERE/TomTom API)</li>
+        <li>מודל רב-שנתי (2019–2023)</li>
+        <li>Neural Network לחיזוי AADT</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- עמוד 3: נקודות להצגה -->
+<div class="page">
+  <h1 class="section">7. מבנה ההצגה — 4 דקות</h1>
+  <table>
+    <tr><th>דקה</th><th>תוכן</th><th>נקודות מפתח</th></tr>
+    <tr>
+      <td><strong>1:00</strong></td>
+      <td>הצגה + בעיה</td>
+      <td>"ישראל: 331 תאונות קטלניות בצמתים ב-2021. עלות שנתית: ₪957M. כיצד מחליטים איפה להשקיע?"</td>
+    </tr>
+    <tr>
+      <td><strong>2:00</strong></td>
+      <td>הדגמה חיה</td>
+      <td>לחץ על צומת אדום במפה → ניתוח → פתרון → חיזוי לפני/אחרי</td>
+    </tr>
+    <tr>
+      <td><strong>1:00</strong></td>
+      <td>מודל ML</td>
+      <td>"Random Forest, 79.1% Accuracy, 11 פיצ'רים. Feature חשוב ביותר: rear_pct"</td>
+    </tr>
+    <tr>
+      <td><strong>:30</strong></td>
+      <td>סיכום + מגבלות</td>
+      <td>"AADT מוערך, לא מדוד. עתיד: חיבור לספירות תנועה"</td>
+    </tr>
+  </table>
+
+  <h1 class="section">8. תשובות להגנה — שאלות צפויות</h1>
+  <table>
+    <tr><th>שאלה</th><th>תשובה מומלצת</th></tr>
+    <tr>
+      <td>למה Random Forest ולא Neural Network?</td>
+      <td>211 אתרים בלבד — נתונים מועטים מדי לNN. RF עדיף על נתונים טבלאיים קטנים (HCM 6th Ed.)</td>
+    </tr>
+    <tr>
+      <td>איך ולידציתם את החיזוי?</td>
+      <td>השוואת ציון נוכחי לציון לאחר שדרוג בנוסחה עקבית. שיעורי הפחתה מ-FHWA/NCHRP</td>
+    </tr>
+    <tr>
+      <td>מאיפה 90% הפחתה בכיכר?</td>
+      <td>FHWA Roundabout Guide (2010) + NCHRP Report 572 — מחקר על מאות כיכרות בארה"ב</td>
+    </tr>
+    <tr>
+      <td>למה rear_pct הכי חשוב?</td>
+      <td>תאונות עורפיות = מדד ישיר לצפיפות תנועה ועצירות תכופות → מאפיין צמתים עמוסים</td>
+    </tr>
+    <tr>
+      <td>מה הפרויקט לא עושה?</td>
+      <td>לא מחליף סקר שטח — אלא מספק סדרי עדיפויות ראשוניים לקבלת החלטות</td>
+    </tr>
+    <tr>
+      <td>כיצד ניתן להרחיב?</td>
+      <td>נתוני ספירת תנועה מ-data.gov.il, HERE API לLOS אמיתי, נתונים רב-שנתיים</td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>
