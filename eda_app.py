@@ -1,4 +1,4 @@
-"""
+﻿"""
 מערכת תמיכה בהחלטות לשדרוג צמתים — משרד התחבורה
 ==================================================
 נתונים: למ"ס PUF 2021 | עלויות: נתיבי ישראל + מכרזים רשמיים
@@ -514,15 +514,12 @@ def load_metrics(_v="v2"):
 @st.cache_data(show_spinner=False, ttl=3600)
 def detect_existing_infra(lat: float, lon: float, road_type: str = "", prof: dict = None) -> dict:
     """
-    זיהוי תשתית קיימת בצומת — שלוש שכבות:
-    1. נתוני CBS (SUG_DEREH, פרופיל תאונות)
-    2. OSM/Overpass — שאילתה מקיפה עם כל תגי הצומת הנפוצים בישראל
-    3. Google Places API (אם קיים GOOGLE_MAPS_KEY)
+    זיהוי תשתית קיימת — 3 שכבות: CBS -> Overpass(300m) -> Nominatim reverse geocoding
     """
     found = {"כיכר": False, "רמזור": False, "עצור": False, "מצלמה": False,
              "מקור": None, "ביטחון": "נמוך"}
 
-    # ── שכבה 1: CBS data — SUG_DEREH=5 = כיכר ────────────────────────────────
+    # שכבה 1: CBS
     if road_type in ("חניון / כיכר", "5"):
         found["כיכר"] = True
         found["מקור"] = "CBS (SUG_DEREH=5)"
@@ -530,64 +527,87 @@ def detect_existing_infra(lat: float, lon: float, road_type: str = "", prof: dic
 
     if prof:
         frontal = prof.get("frontal_pct", 0)
-        # ב-CBS אין סימן אמין לזיהוי רמזור — rear_pct גבוה קיים גם בצמתות רמזור.
-        # frontal גבוה = עצור/כניעה (ציר ראשי ללא עדיפות ברורה)
         if frontal > 0.25 and not found["כיכר"] and not found["רמזור"]:
             found["עצור"] = True
             found["מקור"] = found["מקור"] or "CBS (frontal_pct>25%)"
             found["ביטחון"] = "בינוני"
 
-    # ── שכבה 2: OSM/Overpass — שאילתה מקיפה ─────────────────────────────────
+    # שכבה 2: Overpass API - רדיוס 300מ'
     try:
         q = f"""
-[out:json][timeout:8];
+[out:json][timeout:10];
 (
-  way["junction"~"roundabout|circular"](around:150,{lat},{lon});
-  way["highway"="mini_roundabout"](around:150,{lat},{lon});
-  node["highway"="mini_roundabout"](around:150,{lat},{lon});
-  node["junction"~"roundabout|circular"](around:150,{lat},{lon});
-  node["highway"="traffic_signals"](around:120,{lat},{lon});
-  node["traffic_signals"](around:120,{lat},{lon});
-  node["highway"~"^stop$|^give_way$"](around:100,{lat},{lon});
-  node["highway"="speed_camera"](around:120,{lat},{lon});
-  node["enforcement"="speed"](around:120,{lat},{lon});
+  way["junction"~"roundabout|circular"](around:300,{lat},{lon});
+  way["highway"="mini_roundabout"](around:300,{lat},{lon});
+  node["highway"="mini_roundabout"](around:300,{lat},{lon});
+  node["junction"~"roundabout|circular"](around:300,{lat},{lon});
+  node["highway"="traffic_signals"](around:200,{lat},{lon});
+  node["traffic_signals"](around:200,{lat},{lon});
+  node["highway"~"^stop$|^give_way$"](around:150,{lat},{lon});
+  node["highway"="speed_camera"](around:200,{lat},{lon});
+  node["enforcement"="speed"](around:200,{lat},{lon});
 );
 out tags;
 """
-        r = requests.post("https://overpass-api.de/api/interpreter", data=q, timeout=9)
-        elements = r.json().get("elements", [])
-        for el in elements:
-            tags = el.get("tags", {})
-            hw   = tags.get("highway", "")
-            junc = tags.get("junction", "")
-            ts   = tags.get("traffic_signals", "")
-            # כיכר: junction=roundabout/circular OR highway=mini_roundabout
-            if junc in ("roundabout", "circular") or hw == "mini_roundabout":
-                found["כיכר"] = True
-                found["מקור"] = "OpenStreetMap"
-                found["ביטחון"] = "גבוה"
-            # רמזור: highway=traffic_signals OR traffic_signals=* key exists
-            if hw == "traffic_signals" or ts:
-                found["רמזור"] = True
-                found["מקור"] = found["מקור"] or "OpenStreetMap"
-                found["ביטחון"] = "גבוה"
-            # עצור / כניעה
-            if hw in ("stop", "give_way"):
-                found["עצור"] = True
-                found["מקור"] = found["מקור"] or "OpenStreetMap"
-            # מצלמה
-            if hw == "speed_camera" or tags.get("enforcement") == "speed":
-                found["מצלמה"] = True
-                found["מקור"] = found["מקור"] or "OpenStreetMap"
+        r = requests.post("https://overpass-api.de/api/interpreter", data=q, timeout=11)
+        if r.status_code == 200:
+            elements = r.json().get("elements", [])
+            for el in elements:
+                tags = el.get("tags", {})
+                hw   = tags.get("highway", "")
+                junc = tags.get("junction", "")
+                ts   = tags.get("traffic_signals", "")
+                if junc in ("roundabout", "circular") or hw in ("mini_roundabout",):
+                    found["כיכר"] = True
+                    found["מקור"] = "OpenStreetMap (Overpass)"
+                    found["ביטחון"] = "גבוה"
+                if hw == "traffic_signals" or ts:
+                    found["רמזור"] = True
+                    found["מקור"] = found["מקור"] or "OpenStreetMap (Overpass)"
+                    found["ביטחון"] = "גבוה"
+                if hw in ("stop", "give_way"):
+                    found["עצור"] = True
+                    found["מקור"] = found["מקור"] or "OpenStreetMap (Overpass)"
+                if hw == "speed_camera" or tags.get("enforcement") == "speed":
+                    found["מצלמה"] = True
+                    found["מקור"] = found["מקור"] or "OpenStreetMap (Overpass)"
     except Exception:
-        pass  # ממשיכים עם מה שיש מ-CBS
+        pass
 
-    # ── שכבה 3: Google Places API (Nearby Search) ─────────────────────────────
+    # שכבה 3: Nominatim reverse geocoding - שאילתה ישירה לנקודה
+    if not any([found["כיכר"], found["רמזור"], found["עצור"]]):
+        try:
+            hdrs = {"User-Agent": "IsraelIntersectionAnalyzer/2.0 (academic project)"}
+            url = (f"https://nominatim.openstreetmap.org/reverse"
+                   f"?lat={lat}&lon={lon}&format=json&zoom=17&extratags=1&namedetails=1")
+            nr = requests.get(url, headers=hdrs, timeout=7)
+            if nr.status_code == 200:
+                nd = nr.json()
+                et   = nd.get("extratags") or {}
+                ntyp = nd.get("type", "")
+                name = str((nd.get("namedetails") or {}).get("name", "")).lower()
+                junc = et.get("junction", "")
+                hw2  = et.get("highway", ntyp)
+                if (junc in ("roundabout", "circular")
+                        or ntyp == "roundabout"
+                        or hw2 == "mini_roundabout"
+                        or "roundabout" in name or "כיכר" in name):
+                    found["כיכר"] = True
+                    found["מקור"] = "Nominatim (OSM reverse geocode)"
+                    found["ביטחון"] = "גבוה"
+                elif ntyp == "traffic_signals" or et.get("traffic_signals"):
+                    found["רמזור"] = True
+                    found["מקור"] = "Nominatim (OSM reverse geocode)"
+                    found["ביטחון"] = "גבוה"
+        except Exception:
+            pass
+
+    # שכבה 4: Google Places API
     gkey = os.environ.get("GOOGLE_MAPS_KEY", "")
     if gkey and not any([found["כיכר"], found["רמזור"], found["עצור"]]):
         try:
             url = (f"https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-                   f"?location={lat},{lon}&radius=150&type=route&key={gkey}")
+                   f"?location={lat},{lon}&radius=200&type=route&key={gkey}")
             gr = requests.get(url, timeout=6)
             if gr.status_code == 200:
                 for place in gr.json().get("results", []):
@@ -605,7 +625,6 @@ out tags;
         found["ביטחון"] = "נמוך"
 
     return found
-
 @st.cache_resource(show_spinner="בונה מודל חיזוי מרחבי…")
 def build_planning_model():
     sites = snap_to_roads("v2").dropna(subset=["lat","lon"]).copy()
@@ -910,9 +929,37 @@ with st.container():
         if tags:
             st.success(f"**תשתית מזוהה:** {' | '.join(tags)}  \n"
                        f"מקור: **{src}** | ביטחון זיהוי: {trust_icon} **{trust}**")
+            # Allow override even when detected (in case detection is wrong)
+            with st.expander("🔧 זיהוי שגוי? תקן ידנית"):
+                man_override = st.selectbox(
+                    "בחר את סוג התשתית האמיתית:",
+                    ["— אל תשנה (השתמש בזיהוי אוטומטי) —",
+                     "🔵 כיכר תנועה", "🚦 רמזור", "🛑 עצור/כניעה", "🔴 ללא בקרה"],
+                    key=f"infra_override_{selected}")
+                if man_override != "— אל תשנה (השתמש בזיהוי אוטומטי) —":
+                    osm_i = {"כיכר": "כיכר" in man_override,
+                             "רמזור": "רמזור" in man_override,
+                             "עצור": "עצור" in man_override,
+                             "מצלמה": False,
+                             "מקור": "ידני (override)", "ביטחון": "גבוה"}
+                    st.session_state[f"osm_{selected}"] = osm_i
+                    st.info(f"✅ עודכן ידנית: **{man_override}**")
         else:
             st.warning(f"⚠️ **לא זוהתה תשתית קיימת** (מקור: {src})  \n"
-                       "אנא בחר ידנית בשדה 'בקרה קיימת' מתחת.")
+                       "ניתן לבחור ידנית:")
+            man_infra = st.selectbox(
+                "בחר את סוג התשתית הקיימת בצומת:",
+                ["ללא בקרה (לא ידוע)", "🔵 כיכר תנועה",
+                 "🚦 רמזור", "🛑 עצור/כניעה"],
+                key=f"infra_manual_{selected}")
+            if man_infra != "ללא בקרה (לא ידוע)":
+                osm_i = {"כיכר": "כיכר" in man_infra,
+                         "רמזור": "רמזור" in man_infra,
+                         "עצור": "עצור" in man_infra,
+                         "מצלמה": False,
+                         "מקור": "ידני", "ביטחון": "גבוה"}
+                st.session_state[f"osm_{selected}"] = osm_i
+                st.success(f"✅ נקבע ידנית: **{man_infra}**")
 
     # ── מפה עם נקודה מדויקת לכביש + עיגול מסמן ────────────────────────────
     # נתוני המצב הקיים — מוצגים מיד
