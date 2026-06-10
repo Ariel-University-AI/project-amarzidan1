@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>מצגת — ניתוח וחיזוי צמתים</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',Arial,sans-serif; background:#0f172a; direction:rtl; }
+
+.nav { position:fixed; bottom:0; left:0; right:0; z-index:99;
+       background:#1e3a8a; border-top:3px solid #f59e0b; }
+.nav-title { background:rgba(0,0,0,0.4); text-align:center;
+             padding:6px; font-size:18px; font-weight:700; color:#fff; }
+.nav-row { display:flex; justify-content:space-between; align-items:center; padding:9px 24px; }
+button { border:none; padding:10px 26px; border-radius:7px; cursor:pointer;
+         font-size:19px; font-family:inherit; font-weight:700; }
+.bn { background:#f59e0b; color:#1e3a8a; }
+.bn:hover { background:#fbbf24; }
+.bp { background:#16a34a; color:#fff; }
+.bp:hover { background:#15803d; }
+#cnt { color:#fde68a; font-weight:800; font-size:20px; }
+
+.slide { display:none; padding:22px 52px 100px; min-height:100vh; background:#f0f4ff; }
+.slide.active { display:block; }
+
+.slide-top { background:linear-gradient(135deg,#1e3a8a,#1d4ed8);
+             margin:-22px -52px 22px; padding:20px 52px;
+             border-bottom:4px solid #f59e0b; }
+.slide-top h1 { color:#fff; font-size:28px; font-weight:800; }
+.slide-top p  { color:#93c5fd; font-size:17px; margin-top:4px; }
+
+.g2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:14px 0; }
+.g3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:12px 0; }
+.g4 { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:10px 0; }
+
+.box { border-radius:10px; padding:14px 16px; }
+.b-blue   { background:#dbeafe; border-right:5px solid #1d4ed8; }
+.b-green  { background:#dcfce7; border-right:5px solid #16a34a; }
+.b-red    { background:#fee2e2; border-right:5px solid #dc2626; }
+.b-orange { background:#ffedd5; border-right:5px solid #ea580c; }
+.b-purple { background:#f3e8ff; border-right:5px solid #7c3aed; }
+.b-teal   { background:#ccfbf1; border-right:5px solid #0d9488; }
+.b-gray   { background:#f8fafc; border:1px solid #cbd5e1; }
+.box h3 { font-size:18px; font-weight:800; margin-bottom:7px; }
+.box p, .box li { font-size:17px; line-height:1.65; color:#1e293b; }
+.box ul { padding-right:16px; }
+.box li { margin-bottom:4px; }
+
+.sh { font-size:20px; font-weight:800; color:#1e3a8a;
+      border-bottom:2.5px solid #1e3a8a; padding-bottom:5px; margin:16px 0 10px; }
+
+.hl  { background:#dbeafe; border-right:5px solid #1e3a8a; border-radius:7px;
+       padding:12px 16px; margin:12px 0; font-size:18px; font-weight:700; color:#1e3a8a; }
+.hlr { background:#fee2e2; border-right:5px solid #dc2626; border-radius:7px;
+       padding:12px 16px; margin:10px 0; font-size:13.5px; font-weight:700; color:#7f1d1d; }
+.hlo { background:#ffedd5; border-right:5px solid #ea580c; border-radius:7px;
+       padding:12px 16px; margin:10px 0; font-size:13.5px; font-weight:700; color:#7c2d12; }
+
+table { width:100%; border-collapse:collapse; margin:10px 0; font-size:12.5px; }
+th { background:#1e3a8a; color:#fff; padding:8px 10px; text-align:right; }
+td { padding:7px 10px; border-bottom:1px solid #e2e8f0; }
+tr:nth-child(even) td { background:#f8fafc; }
+.tg { color:#16a34a; font-weight:700; }
+.tr { color:#dc2626; font-weight:700; }
+.tb { color:#1d4ed8; font-weight:700; }
+.to { color:#ea580c; font-weight:700; }
+.tt { color:#0d9488; font-weight:700; }
+
+.sbox { background:rgba(255,255,255,0.18); border-radius:8px; padding:14px; text-align:center; }
+.snum { font-size:30px; font-weight:800; color:#f59e0b; }
+.slbl { font-size:15px; color:#bfdbfe; margin-top:3px; }
+
+.mx { border-radius:8px; padding:13px; text-align:center; color:#fff; }
+.mv { font-size:28px; font-weight:800; }
+.ml { font-size:15px; margin-top:3px; opacity:.9; }
+
+/* פסקאות בעיה גדולות */
+.big-prob { border-radius:12px; padding:18px 20px; display:flex; align-items:flex-start; gap:14px; margin-bottom:12px; }
+.big-prob-icon { font-size:40px; flex-shrink:0; }
+.big-prob h2 { font-size:22px; font-weight:800; margin-bottom:6px; }
+.big-prob p  { font-size:17px; line-height:1.65; }
+
+hr { border:none; border-top:2px dashed #cbd5e1; margin:16px 0; }
+
+@media print {
+  .nav { display:none !important; }
+  .slide { display:block !important; page-break-after:always; padding:16px 36px 40px; }
+  .slide:last-child { page-break-after:avoid; }
+  * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══ שקופית 1: הבעיה הכפולה + נתונים + הגדרות ══ -->
+<div class="slide active" data-t="1 — הבעיה: תאונות ופקקים · הנתונים · הגדרות">
+
+  <div class="slide-top">
+    <h1>🚦 מערכת ניתוח וחיזוי צמתים — ישראל 2021</h1>
+    <p>שדרוג צמתים: פחות תאונות + פחות פקקים · תמיכת החלטות למשרד התחבורה · אוניברסיטת אריאל · Demo Day 11/06/2026</p>
+  </div>
+
+  <!-- כותרת ראשית -->
+  <div class="hl" style="font-size:20px;text-align:center">
+    צמתים בישראל סובלים משתי בעיות קשות — <strong>תאונות דרכים</strong> ו<strong>פקקי תנועה</strong>.<br>
+    שתיהן גורמות נזק עצום ושתיהן ניתנות לפתרון עם שדרוג הנדסי נכון.
+  </div>
+
+  <div class="g2">
+
+    <!-- בעיה 1: תאונות -->
+    <div>
+      <div class="sh" style="color:#dc2626;border-color:#dc2626">☠️ בעיה 1 — תאונות דרכים</div>
+
+      <div class="big-prob" style="background:#fee2e2">
+        <div class="big-prob-icon">💀</div>
+        <div>
+          <h2 style="color:#dc2626">331 הרוגים בשנה בצמתים</h2>
+          <p style="color:#7f1d1d">בישראל 2021 — 331 אנשים נהרגו בצמתים בלבד. עוד 636 נפצעו קשה. כל תאונה קטלנית עולה לחברה <strong>₪3.5 מיליון</strong> (נתון רשמי — משרד התחבורה).</p>
+        </div>
+      </div>
+
+      <div class="big-prob" style="background:#ffedd5">
+        <div class="big-prob-icon">💰</div>
+        <div>
+          <h2 style="color:#ea580c">₪957 מיליון שנתיים</h2>
+          <p style="color:#7c2d12">זו העלות הכלכלית הכוללת של תאונות בצמתים — רפואה, אובדן עבודה, נזק רכוש. שדרוג צמתים מסוכנים יכול לחסוך <strong>עשרות מיליונים</strong> בשנה.</p>
+        </div>
+      </div>
+
+      <div class="box b-red">
+        <h3>🔴 הבעיה האמיתית</h3>
+        <p>אין מערכת שאומרת לאנשי המקצוע: <strong>איזה צומת הכי מסוכן? למה? ומה הפתרון?</strong> ההחלטות מתקבלות בלי ניתוח מקיף של כל הצמתים.</p>
+      </div>
+    </div>
+
+    <!-- בעיה 2: פקקים -->
+    <div>
+      <div class="sh" style="color:#0d9488;border-color:#0d9488">🚗 בעיה 2 — פקקי תנועה</div>
+
+      <div class="big-prob" style="background:#ccfbf1">
+        <div class="big-prob-icon">🚦</div>
+        <div>
+          <h2 style="color:#0d9488">3,035 תאונות פקק בשנה</h2>
+          <p style="color:#134e4a">60.5% מהתאונות בצמתים הן "עורפיות" — רכב פגע ברכב שעצר בפקק. זה מדד ישיר לצמתים חסומים ועמוסים.</p>
+        </div>
+      </div>
+
+      <div class="big-prob" style="background:#f3e8ff">
+        <div class="big-prob-icon">⏰</div>
+        <div>
+          <h2 style="color:#7c3aed">שעות עומס: 07-09, 16-19</h2>
+          <p style="color:#4c1d95">66 תאונות נוספות קורות דווקא בשעות העומס. פקק גורם ללחץ, חוסר סבלנות וסיכון גבוה. פתרון נכון יפחית גם פקקים וגם תאונות.</p>
+        </div>
+      </div>
+
+      <div class="box b-teal">
+        <h3>🔵 הקשר בין פקק לתאונות</h3>
+        <p>צומת עמוסה = תורים ארוכים = נהגים לחוצים = יותר תאונות. <strong>פתרון שמפחית פקק — מפחית גם תאונות.</strong> זו הסיבה שהניתוח שלנו מתחשב בשניהם.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="g2">
+    <!-- נתונים -->
+    <div>
+      <div class="sh">📊 הנתונים שמתבססים עליהם</div>
+      <div class="box b-blue">
+        <h3>הלמ"ס (הלשכה המרכזית לסטטיסטיקה) 2021 — 11,554 תאונות אמיתיות, 45 עמודות</h3>
+        <ul>
+          <li><b>קוד צומת ייחודי</b> — מזהים כל צומת בנפרד</li>
+          <li><b>חומרה:</b> קטלנית / קשה / קלה</li>
+          <li><b>סוג תאונה:</b> חזיתית / <b>עורפית (פקק)</b> / הולך רגל</li>
+          <li><b>שעת תאונה:</b> זיהוי שעות עומס</li>
+          <li><b>מיקום GPS:</b> כל תאונה על מפה</li>
+        </ul>
+        <div style="margin-top:8px;background:#1e3a8a;border-radius:6px;padding:8px;color:#fff;font-size:16px">
+          <b>מדד עומס שמחשבים:</b> תאונות עורפיות × 60% + תאונות בשעות עומס × 40%
+        </div>
+      </div>
+    </div>
+
+    <!-- הגדרה -->
+    <div>
+      <div class="sh">🔍 מתי צומת "טובה" ומתי "בעייתית"?</div>
+      <div class="hl" style="font-size:12.5px">5 קריטריונים. 3+ טובים → ✅ אין צורך בשדרוג. פחות מ-3 → ⚠️ נדרשת בדיקה.</div>
+      <table>
+        <tr><th>קריטריון</th><th>✅ טוב</th><th>❌ בעייתי</th></tr>
+        <tr><td>זרימת תנועה</td><td class="tg">A–C (זורם)</td><td class="tr">D–F (פקק)</td></tr>
+        <tr><td>זמן המתנה</td><td class="tg">&lt;35 שנ'</td><td class="tr">&gt;40 שנ'</td></tr>
+        <tr><td>אורך תורים</td><td class="tg">&lt;100 מ'</td><td class="tr">&gt;200 מ'</td></tr>
+        <tr><td>תאונות חמורות</td><td class="tg">0 קטלניות</td><td class="tr">קטלנית 1+</td></tr>
+        <tr><td>מדד עומס</td><td class="tg">&lt;30%</td><td class="tr">&gt;50%</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ שקופית 2: הפתרון — ניתוח, חלופות, מודל, חיזוי ══ -->
+<div class="slide" data-t="2 — הפתרון: 9 חלופות · מודל AI · חיזוי">
+
+  <div class="slide-top">
+    <h1>🏗️ הפתרון — כיצד משדרגים צומת?</h1>
+    <p>9 חלופות הנדסיות · מודל בינה מלאכותית · חיזוי השפעה על תאונות ופקקים</p>
+  </div>
+
+  <div class="hl" style="font-size:18px;text-align:center">
+    כל פתרון מדורג לפי: <b>בטיחות (40%)</b> + <b>הפחתת פקק (35%)</b> + <b>כלכלה (15%)</b> + <b>סביבה (10%)</b>
+  </div>
+
+  <div class="g2">
+
+    <!-- חלופות -->
+    <div>
+      <div class="sh">🔧 9 פתרונות אפשריים לשדרוג הצומת</div>
+      <table>
+        <tr><th>פתרון</th><th>פחות הרוגים</th><th>פחות פקק</th><th>עלות</th></tr>
+        <tr><td><b>כיכר תנועה קטנה</b></td><td class="tg">90% ↓</td><td class="tt">30% ↓</td><td>₪500,000</td></tr>
+        <tr><td>כיכר תנועה טורבו</td><td class="tg">85% ↓</td><td class="tt">35% ↓</td><td>₪2,500,000</td></tr>
+        <tr><td>כיכר תנועה גדולה</td><td class="tg">78% ↓</td><td class="tt">30% ↓</td><td>₪1,200,000</td></tr>
+        <tr><td>הפרדה מפלסית מלאה</td><td class="tg">70% ↓</td><td class="tt">80% ↓</td><td>₪100M</td></tr>
+        <tr><td>רמזור חכם מסתגל</td><td class="to">30% ↓</td><td class="tt">20% ↓</td><td>₪7,000,000</td></tr>
+        <tr><td>הוספת נתיבי פנייה</td><td class="to">25% ↓</td><td class="tt">15% ↓</td><td>₪700,000</td></tr>
+        <tr><td>שיפור עיצוב הצומת</td><td class="to">15% ↓</td><td class="tt">5% ↓</td><td>₪500,000</td></tr>
+      </table>
+      <div class="box b-teal" style="margin-top:8px">
+        <h3>🏆 למה כיכר תנועה היא הפתרון הטוב ביותר?</h3>
+        <ul>
+          <li>מבטלת התנגשויות חזיתיות — כולם נוסעים לאותו כיוון</li>
+          <li>מאלצת האטה → פחות תאונות חמורות</li>
+          <li>זורמת ברציפות → <strong>אין עצירות מיותרות = פחות פקק</strong></li>
+          <li>עלות נמוכה ביחס לתועלת: החזר השקעה תוך חודשים!</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- מודל + חיזוי -->
+    <div>
+      <div class="sh">🤖 מודל בינה מלאכותית</div>
+      <div class="box b-gray" style="margin-bottom:10px">
+        <h3>המודל לומד מ-211 צמתים ומזהה דפוסים</h3>
+        <p><b>קלט — 11 גורמים:</b> מספר תאונות, % הרוגים, % פקק (עורפיות), % שעות עומס, % לילה ועוד</p>
+        <p style="margin-top:5px"><b>פלט:</b> איזה פתרון הנדסי הכי מתאים לצומת הזו</p>
+        <p style="margin-top:5px;color:#dc2626;font-weight:700">הגורם הכי חשוב: % תאונות עורפיות (פקק) — 41.6% מהמשקל!</p>
+      </div>
+      <div class="g4">
+        <div class="mx" style="background:#1d4ed8"><div class="mv">79.1%</div><div class="ml">דיוק</div></div>
+        <div class="mx" style="background:#16a34a"><div class="mv">74.5%</div><div class="ml">ציון F1</div></div>
+        <div class="mx" style="background:#ea580c"><div class="mv">76.2%</div><div class="ml">דיוק חיזוי</div></div>
+        <div class="mx" style="background:#0d9488"><div class="mv">79.1%</div><div class="ml">שלמות</div></div>
+      </div>
+
+      <div class="sh" style="margin-top:14px">🔮 חיזוי "לפני ואחרי שדרוג"</div>
+      <div class="g3">
+        <div class="box b-red" style="text-align:center">
+          <div style="font-size:24px">📊</div>
+          <h3>מצב היום</h3>
+          <p style="font-size:15px">ציון לצומת: תאונות + פקק + עלויות</p>
+        </div>
+        <div class="box b-orange" style="text-align:center">
+          <div style="font-size:24px">🔧</div>
+          <h3>בוחרים פתרון</h3>
+          <p style="font-size:15px">מחשבים: כמה הרוגים + כמה פקק יפחתו</p>
+        </div>
+        <div class="box b-green" style="text-align:center">
+          <div style="font-size:24px">✅</div>
+          <h3>ציון חדש + ROI</h3>
+          <p style="font-size:15px">בכמה שנים מחזירים את עלות ההשקעה</p>
+        </div>
+      </div>
+      <div class="hl" style="font-size:16px">
+        <b>דוגמה:</b> כיכר תנועה קטנה → 90% פחות הרוגים · 30% פחות פקק · עלות ₪500K<br>
+        חיסכון שנתי בעלות תאונות: ₪3.5M → <b>החזר השקעה תוך פחות מחצי שנה!</b>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ שקופית 3: תוצאות + מגבלות ══ -->
+<div class="slide" data-t="3 — תוצאות ומגבלות">
+
+  <div class="slide-top">
+    <h1>📈 תוצאות, תובנות ומגבלות</h1>
+    <p>מה גילינו? · מה הפתרון הטוב ביותר? · מה עוד לא יודעים?</p>
+  </div>
+
+  <div class="sh">📊 מה גילינו?</div>
+  <div class="g4" style="margin-bottom:16px">
+    <div class="box b-red" style="text-align:center">
+      <div style="font-size:34px;font-weight:800;color:#dc2626">15</div>
+      <h3>צמתים סיכון גבוה</h3>
+      <p style="font-size:16px">שדרוג מיידי נדרש</p>
+    </div>
+    <div class="box b-orange" style="text-align:center">
+      <div style="font-size:34px;font-weight:800;color:#ea580c">122</div>
+      <h3>צמתים סיכון בינוני</h3>
+      <p style="font-size:16px">בדיקה ותכנון</p>
+    </div>
+    <div class="box b-teal" style="text-align:center">
+      <div style="font-size:34px;font-weight:800;color:#0d9488">60.5%</div>
+      <h3>מהתאונות = פקק</h3>
+      <p style="font-size:16px">תאונות עורפיות — גורם עיקרי</p>
+    </div>
+    <div class="box b-green" style="text-align:center">
+      <div style="font-size:34px;font-weight:800;color:#16a34a">90%</div>
+      <h3>הפחתה בכיכר</h3>
+      <p style="font-size:16px">הפתרון הטוב ביותר</p>
+    </div>
+  </div>
+
+  <div class="g2">
+    <div>
+      <div class="sh">🏆 תובנות מרכזיות</div>
+      <div class="box b-green" style="margin-bottom:12px">
+        <h3>כיכר תנועה — הפתרון שפותר שתי הבעיות יחד</h3>
+        <ul>
+          <li>✅ <b>פחות תאונות:</b> 90% פחות הרוגים (מחקר אמריקאי)</li>
+          <li>✅ <b>פחות פקק:</b> תנועה זורמת ללא עצירות מיותרות</li>
+          <li>✅ <b>זול:</b> ₪500,000 בלבד לכיכר עירונית קטנה</li>
+          <li>✅ <b>החזר מהיר:</b> חיסכון של מיליונים תוך חודשים</li>
+        </ul>
+      </div>
+      <div class="box b-teal">
+        <h3>📊 הקשר בין פקק לתאונות — הגורם #1</h3>
+        <p>% תאונות עורפיות הוא הגורם המשפיע ביותר במודל (41.6%). פקק → עצירות פתאומיות → פגיעות מאחור → <b>שדרוג שמפחית פקק = פחות תאונות</b>.</p>
+      </div>
+    </div>
+
+    <div>
+      <div class="sh">⚠️ מגבלות — מה עוד לא יודעים?</div>
+      <table>
+        <tr><th>מגבלה</th><th>פתרון עתידי</th></tr>
+        <tr><td>כמות רכבים ביום — <b>מוערכת</b></td><td class="tb">ספירות תנועה רשמיות</td></tr>
+        <tr><td>זרימת תנועה — <b>מוערכת</b></td><td class="tb">שירות נתוני תנועה חי</td></tr>
+        <tr><td>נתוני שנה אחת בלבד</td><td class="tb">נתונים 2019–2023</td></tr>
+        <tr><td>אין "לפני/אחרי" ישראלי</td><td class="tb">מאגר נתיבי ישראל</td></tr>
+      </table>
+      <div class="box b-orange" style="margin-top:10px">
+        <h3>❓ האם החיזוי מדויק?</h3>
+        <p>שיעורי הפחתה מבוססים על מחקרים מארה"ב. לוולידציה אמיתית דרוש השוואת נתוני לפני/אחרי מישראל.</p>
+      </div>
+      <div class="hl" style="margin-top:10px;font-size:17px">
+        ✅ המערכת <b>לא מחליפה</b> סקר שטח — מספקת בסיס לתעדוף ראשוני
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ניווט -->
+<div class="nav">
+  <div class="nav-title" id="stitle">שקופית 1</div>
+  <div class="nav-row">
+    <div style="display:flex;gap:8px">
+      <button class="bn" onclick="go(-1)">◀ הקודם</button>
+      <button class="bn" onclick="go(1)">הבא ▶</button>
+      <button class="bp" onclick="printAll()">🖨️ הדפס PDF</button>
+    </div>
+    <span id="cnt">1 / 3</span>
+  </div>
+</div>
+
+<script>
+let cur=0;
+const slides=document.querySelectorAll('.slide');
+const N=slides.length;
+function show(n){
+  slides[cur].classList.remove('active');
+  cur=(n+N)%N;
+  slides[cur].classList.add('active');
+  document.getElementById('cnt').textContent=(cur+1)+' / '+N;
+  document.getElementById('stitle').textContent=slides[cur].dataset.t||'';
+  window.scrollTo(0,0);
+}
+function go(d){show(cur+d);}
+function printAll(){
+  slides.forEach(s=>s.style.display='block');
+  window.print();
+  setTimeout(()=>slides.forEach((s,i)=>s.style.display=i===cur?'block':'none'),1500);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='ArrowUp')go(-1);
+  if(e.key==='ArrowLeft'||e.key==='ArrowDown')go(1);
+});
+show(0);
+</script>
+</body>
+</html>
