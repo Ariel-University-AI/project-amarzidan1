@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m streamlit --version)",
+      "Bash(cmd /c run_app.bat)",
+      "Bash(\"C:/Users/אא/AppData/Local/Programs/Python/Python39/python.exe\" -m streamlit run eda_app.py --server.port 8501 --server.headless true)",
+      "Bash(git commit -m ' *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(git commit *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\אא\\OneDrive\\שולחן העבודה\\AI\\AI"
+    ]
+  }
+}
