@@ -530,14 +530,9 @@ def detect_existing_infra(lat: float, lon: float, road_type: str = "", prof: dic
 
     if prof:
         frontal = prof.get("frontal_pct", 0)
-        rear    = prof.get("rear_pct", 0)
-        # rear_pct גבוה מאוד מעיד על כיכר (נהגים עוצרים לפני הכניסה)
-        if rear > 0.55 and not found["כיכר"]:
-            found["כיכר"] = True
-            found["מקור"] = found["מקור"] or "CBS (rear_pct>55%)"
-            found["ביטחון"] = "בינוני"
-        # frontal גבוה = עצור/כניעה
-        elif frontal > 0.25 and not found["כיכר"] and not found["רמזור"]:
+        # ב-CBS אין סימן אמין לזיהוי רמזור — rear_pct גבוה קיים גם בצמתות רמזור.
+        # frontal גבוה = עצור/כניעה (ציר ראשי ללא עדיפות ברורה)
+        if frontal > 0.25 and not found["כיכר"] and not found["רמזור"]:
             found["עצור"] = True
             found["מקור"] = found["מקור"] or "CBS (frontal_pct>25%)"
             found["ביטחון"] = "בינוני"
